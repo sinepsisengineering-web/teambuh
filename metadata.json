@@ -1,0 +1,12 @@
+{
+  "name": "TeamBuh",
+  "description": "Многопользовательское приложение для бухгалтерских команд",
+  "version": "0.0.1",
+  "author": "TeamBuh Team",
+  "license": "MIT",
+  "main": "electron.cjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sinepsisengineering-web/teambuh"
+  }
+}
