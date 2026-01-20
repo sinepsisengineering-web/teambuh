@@ -1,9 +1,18 @@
 // components/ClientsView.tsx
 // Новый компонент списка и детализации клиентов
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { DocumentUpload, UploadedDocument } from './DocumentUpload';
 import { MiniCalendar } from './MiniCalendar';
+import { LegalEntity, TaxSystem as GlobalTaxSystem, LegalForm as GlobalLegalForm } from '../types';
+
+// Props от родительского компонента App.tsx
+interface ClientsViewProps {
+    legalEntities: LegalEntity[];
+    onSave: (entity: LegalEntity) => void;
+    onDelete: (entity: LegalEntity) => void;
+    onArchive: (entity: LegalEntity) => void;
+}
 
 // ============================================
 // ТИПЫ
@@ -209,6 +218,71 @@ const mockComments: Comment[] = [
 ];
 
 // ============================================
+// АДАПТЕР: LegalEntity → Client
+// ============================================
+
+const adaptLegalEntityToClient = (le: LegalEntity): Client => {
+    // Конвертация TaxSystem
+    const taxSystemMap: Record<string, TaxSystem> = {
+        'ОСНО': 'osn',
+        'УСН "Доходы"': 'usn6',
+        'УСН "Доходы минус расходы"': 'usn15',
+        'Патент': 'usn6', // Патент показываем как УСН для упрощения
+    };
+
+    // Конвертация LegalForm
+    const legalFormMap: Record<string, LegalForm> = {
+        'ООО': 'ooo',
+        'ИП': 'ip',
+        'АО': 'ao',
+        'ПАО': 'ao',
+        'ЗАО': 'zao',
+    };
+
+    return {
+        id: le.id,
+        name: le.name,
+        legalForm: legalFormMap[le.legalForm] || 'ooo',
+        inn: le.inn,
+        kpp: le.kpp,
+        ogrn: le.ogrn,
+        taxSystem: taxSystemMap[le.taxSystem] || 'usn6',
+        isNdsPayer: le.isNdsPayer,
+        ndsPercent: le.ndsValue ? parseInt(le.ndsValue) : undefined,
+        hasEmployees: le.hasEmployees,
+        employeeCount: le.hasEmployees ? 1 : 0, // По умолчанию 1 сотрудник если hasEmployees=true
+        status: 'permanent', // По умолчанию постоянный
+        tariff: { name: 'Стандарт', price: 15000 }, // Заглушка
+        managerId: '',
+        managerName: '-',
+        createdAt: le.createdAt instanceof Date ? le.createdAt.toISOString() : String(le.createdAt || ''),
+        legalAddress: le.legalAddress,
+        actualAddress: le.actualAddress,
+        contacts: [{
+            id: 'main',
+            role: 'Контактное лицо',
+            name: le.contactPerson,
+            phone: le.phone,
+            email: le.email
+        }],
+        patents: le.patents?.map(p => ({
+            id: p.id,
+            name: p.name,
+            type: 'Патент',
+            startDate: p.startDate instanceof Date ? p.startDate.toISOString().split('T')[0] : String(p.startDate),
+            endDate: p.endDate instanceof Date ? p.endDate.toISOString().split('T')[0] : String(p.endDate),
+            duration: 12,
+        })),
+        credentials: le.credentials?.map(c => ({
+            id: c.id,
+            serviceName: c.service,
+            login: c.login,
+            password: c.password || '',
+        })),
+    };
+};
+
+// ============================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================
 
@@ -329,10 +403,10 @@ const PatentsSection: React.FC<{ patents: Patent[]; isIP: boolean }> = ({ patent
 // ВКЛАДКА СПИСОК
 // ============================================
 
-const ClientListTab: React.FC<{ onSelectClient: (id: string) => void }> = ({ onSelectClient }) => {
+const ClientListTab: React.FC<{ clients: Client[], onSelectClient: (id: string) => void }> = ({ clients, onSelectClient }) => {
     return (
         <div className="space-y-2">
-            {mockClients.map(client => (
+            {clients.map(client => (
                 <div
                     key={client.id}
                     onClick={() => onSelectClient(client.id)}
@@ -403,19 +477,23 @@ const ClientListTab: React.FC<{ onSelectClient: (id: string) => void }> = ({ onS
 // ВКЛАДКА ДЕТАЛИЗАЦИЯ
 // ============================================
 
-const ClientDetailsTab: React.FC<{ clientId: string | null }> = ({ clientId }) => {
-    const [selectedClientId, setSelectedClientId] = useState(clientId || mockClients[0].id);
+const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }> = ({ clients, clientId }) => {
+    const [selectedClientId, setSelectedClientId] = useState(clientId || (clients[0]?.id || ''));
     const [newComment, setNewComment] = useState('');
-    const client = mockClients.find(c => c.id === selectedClientId) || mockClients[0];
+    const client = clients.find(c => c.id === selectedClientId) || clients[0];
 
     const labelClass = "block text-[10px] text-slate-500 mb-0.5";
     const valueClass = "text-xs font-medium text-slate-800";
     const inputClass = "w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-primary/30";
 
     const mockDocs: UploadedDocument[] = [
-        { id: 'doc1', name: 'Договор на обслуживание.pdf', size: 245000, uploadDate: '2024-01-20' },
-        { id: 'doc2', name: 'Учредительные документы.pdf', size: 1200000, uploadDate: '2024-01-20' },
+        { id: 'doc1', name: 'Договор на обслуживание.pdf', size: 245000, uploadDate: new Date('2024-01-20'), type: 'application/pdf' },
+        { id: 'doc2', name: 'Учредительные документы.pdf', size: 1200000, uploadDate: new Date('2024-01-20'), type: 'application/pdf' },
     ];
+
+    if (!client) {
+        return <div className="text-center text-slate-500 py-8">Нет клиентов для отображения</div>;
+    }
 
     return (
         <div className="h-full flex gap-4">
@@ -428,7 +506,7 @@ const ClientDetailsTab: React.FC<{ clientId: string | null }> = ({ clientId }) =
                         onChange={(e) => setSelectedClientId(e.target.value)}
                         className="w-full px-3 py-2 text-sm font-medium bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
                     >
-                        {mockClients.map(c => (
+                        {clients.map(c => (
                             <option key={c.id} value={c.id}>{c.name} — {getLegalFormLabel(c.legalForm)}</option>
                         ))}
                     </select>
@@ -621,8 +699,12 @@ const ClientDetailsTab: React.FC<{ clientId: string | null }> = ({ clientId }) =
 // ВКЛАДКА УПРАВЛЕНИЕ
 // ============================================
 
-const ClientManageTab: React.FC = () => {
-    const [selectedClientId, setSelectedClientId] = useState<string | null>(mockClients[0].id);
+const ClientManageTab: React.FC<{
+    clients: Client[],
+    legalEntities: LegalEntity[],
+    onSave: (entity: LegalEntity) => void
+}> = ({ clients, legalEntities, onSave }) => {
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(clients[0]?.id || null);
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [legalForm, setLegalForm] = useState<LegalForm>('ooo');
 
@@ -671,7 +753,7 @@ const ClientManageTab: React.FC = () => {
     };
 
     // Получаем данные выбранного клиента
-    const currentClient = mockClients.find(c => c.id === selectedClientId);
+    const currentClient = clients.find(c => c.id === selectedClientId);
     const isExisting = !isAddingNew && currentClient;
 
     // Валидация формы - возвращает объект с ошибками по полям
@@ -783,46 +865,86 @@ const ClientManageTab: React.FC = () => {
     const handleConfirmSave = async () => {
         setIsSaving(true);
 
-        // Собираем полные данные клиента
-        const clientData: Partial<Client> = {
-            name: formData.name,
-            legalForm: legalForm,
-            inn: formData.inn,
-            kpp: legalForm !== 'ip' ? formData.kpp : undefined,
-            ogrn: legalForm !== 'ip' ? formData.ogrn : undefined,
-            taxSystem: formData.taxSystem as TaxSystem,
-            isNdsPayer: isNdsPayer,
-            ndsPercent: isNdsPayer ? parseInt(ndsPercent) || 20 : undefined,
-            hasEmployees: hasEmployees,
-            employeesCount: hasEmployees ? parseInt(employeesCount) || 0 : undefined,
-            status: formData.status as ClientStatus,
-            tariff: {
-                name: formData.tariff,
-                price: formData.tariff === 'Базовый' ? 5000 : formData.tariff === 'Стандарт' ? 15000 : 35000,
-            },
-            managerName: formData.accountant,
-            legalAddress: formData.legalAddress,
-            actualAddress: formData.actualAddress,
-            bankName: formData.bankName,
-            bankAccount: formData.bankAccount,
-            bik: formData.bik,
-            corrAccount: formData.corrAccount,
-            contacts: editContacts,
-            credentials: editCredentials,
-        };
+        try {
+            // 1. Преобразуем TaxSystem из string в enum
+            const taxSystemMapReverse: Record<string, GlobalTaxSystem> = {
+                'osn': GlobalTaxSystem.OSNO,
+                'usn6': GlobalTaxSystem.USN_DOHODY,
+                'usn15': GlobalTaxSystem.USN_DOHODY_RASHODY,
+                'eshn': GlobalTaxSystem.PATENT, // Временный маппинг, т.к. ESHN нет в enum
+            };
 
-        // Имитация сохранения (TODO: заменить на реальный API)
-        await new Promise(resolve => setTimeout(resolve, 500));
+            // 2. Преобразуем LegalForm из string в enum
+            const legalFormMapReverse: Record<string, GlobalLegalForm> = {
+                'ooo': GlobalLegalForm.OOO,
+                'ip': GlobalLegalForm.IP,
+                'ao': GlobalLegalForm.AO,
+                'zao': GlobalLegalForm.ZAO,
+            };
 
-        console.log('Сохранение клиента:', clientData);
+            // 3. Собираем объект LegalEntity для App.tsx
+            const entityToSave: LegalEntity = {
+                id: currentClient?.id || '', // App.tsx сам сгенерирует ID если пустой
+                legalForm: legalFormMapReverse[legalForm] || GlobalLegalForm.OOO,
+                name: formData.name,
+                inn: formData.inn,
+                kpp: legalForm !== 'ip' ? formData.kpp : undefined,
+                ogrn: formData.ogrn,
+                // created/updated обрабатывает App.tsx или ставим текущее
+                createdAt: currentClient?.createdAt || new Date(),
 
-        setIsSaving(false);
-        setSaveModalType('success');
+                legalAddress: formData.legalAddress,
+                actualAddress: formData.actualAddress || formData.legalAddress,
 
-        // Закрываем модалку через 1.5 сек
-        setTimeout(() => {
-            setShowSaveModal(false);
-        }, 1500);
+                // Контакты: берем первый или собираем из полей
+                contactPerson: editContacts[0]?.name || 'Основной контакт',
+                phone: editContacts[0]?.phone || '',
+                email: editContacts[0]?.email || '',
+
+                taxSystem: taxSystemMapReverse[formData.taxSystem] || GlobalTaxSystem.USN_DOHODY,
+                isNdsPayer: isNdsPayer,
+                ndsValue: isNdsPayer ? ndsPercent : undefined,
+                hasEmployees: hasEmployees,
+
+                // Массивы данных
+                notes: [], // Пока пустой, так как в форме нет поля заметок для LegalEntity
+                credentials: editCredentials.map(c => ({
+                    id: c.id,
+                    service: c.serviceName,
+                    login: c.login,
+                    password: c.password
+                })),
+                patents: currentClient?.patents?.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    startDate: p.startDate,
+                    endDate: p.endDate,
+                    autoRenew: false
+                })) || [],
+
+                isArchived: false
+            };
+
+            // 4. Вызываем реальный метод сохранения из App.tsx
+            // Важно: App.tsx ждет синхронного обновления или сам обновляет стейт
+            onSave(entityToSave);
+
+            console.log('Клиент успешно сохранен:', entityToSave);
+
+            setSaveModalType('success');
+
+            // Закрываем модалку через таймаут
+            setTimeout(() => {
+                setShowSaveModal(false);
+                setIsAddingNew(false); // Выходим из режима добавления
+            }, 1000);
+
+        } catch (error) {
+            console.error('Ошибка при сохранении:', error);
+            // Можно добавить обработку ошибки в UI, если нужно
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     // Форматирование телефона +7 (xxx) xxx-xx-xx
@@ -858,7 +980,7 @@ const ClientManageTab: React.FC = () => {
             setIsNdsPayer(currentClient.isNdsPayer || false);
             setNdsPercent(String(currentClient.ndsPercent || 20));
             setHasEmployees(currentClient.hasEmployees || false);
-            setEmployeesCount(String(currentClient.employeesCount || ''));
+            setEmployeesCount(String(currentClient.employeeCount || ''));
             setFormData({
                 name: currentClient.name || '',
                 inn: currentClient.inn || '',
@@ -956,15 +1078,14 @@ const ClientManageTab: React.FC = () => {
     const inputClass = "w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-primary/30";
     const deleteBtnClass = "px-2 py-1 bg-red-50 text-red-600 rounded border border-red-200 hover:bg-red-100 transition-colors text-xs";
     const inputErrorClass = "w-full px-2 py-1.5 text-xs border border-red-300 rounded focus:outline-none focus:ring-1 focus:ring-red-300 bg-red-50";
+
+    // Helper to get input class based on validation
+    const getFieldClass = (fieldName: string) => {
+        return invalidFields.has(fieldName) ? inputErrorClass : inputClass;
+    };
+
     const labelClass = "block text-[10px] text-slate-500 mb-0.5";
     const sectionClass = "bg-slate-50 rounded-lg p-3 space-y-3";
-
-    // Функция для получения класса поля с учётом валидации
-    const getFieldClass = (fieldName: string) => {
-        return invalidFields.has(fieldName)
-            ? "w-full px-2 py-1.5 text-xs border-2 border-red-400 rounded focus:outline-none focus:ring-1 focus:ring-red-300 bg-red-50"
-            : inputClass;
-    };
 
     return (
         <div className="h-full flex gap-4">
@@ -1325,7 +1446,15 @@ const ClientManageTab: React.FC = () => {
                             💾 {isAddingNew ? 'Создать клиента' : 'Сохранить изменения'}
                         </button>
                         {isExisting && (
-                            <button className="px-4 py-2 bg-red-50 text-red-600 text-xs rounded-lg hover:bg-red-100 border border-red-200">
+                            <button
+                                onClick={() => {
+                                    const entityToDelete = legalEntities.find(le => le.id === selectedClientId);
+                                    if (entityToDelete) {
+                                        onDelete(entityToDelete);
+                                    }
+                                }}
+                                className="px-4 py-2 bg-red-50 text-red-600 text-xs rounded-lg hover:bg-red-100 border border-red-200"
+                            >
                                 🗑️ Удалить клиента
                             </button>
                         )}
@@ -1356,7 +1485,7 @@ const ClientManageTab: React.FC = () => {
                         />
                     </div>
                     <div className="divide-y divide-slate-100">
-                        {mockClients.map(client => (
+                        {clients.map(client => (
                             <div
                                 key={client.id}
                                 onClick={() => handleSelectClient(client.id)}
@@ -1492,9 +1621,14 @@ const ClientManageTab: React.FC = () => {
 // ОСНОВНОЙ КОМПОНЕНТ
 // ============================================
 
-export const ClientsView: React.FC = () => {
+export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave, onDelete, onArchive }) => {
     const [activeTab, setActiveTab] = useState<ClientTab>('list');
     const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+
+    // Конвертируем LegalEntity в Client для отображения в UI
+    const clients = useMemo(() => {
+        return legalEntities.map(adaptLegalEntityToClient);
+    }, [legalEntities]);
 
     const handleSelectClient = (id: string) => {
         setSelectedClientId(id);
@@ -1527,9 +1661,9 @@ export const ClientsView: React.FC = () => {
             </div>
 
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
-                {activeTab === 'list' && <ClientListTab onSelectClient={handleSelectClient} />}
-                {activeTab === 'details' && <ClientDetailsTab clientId={selectedClientId} />}
-                {activeTab === 'manage' && <ClientManageTab />}
+                {activeTab === 'list' && <ClientListTab clients={clients} onSelectClient={handleSelectClient} />}
+                {activeTab === 'details' && <ClientDetailsTab clients={clients} clientId={selectedClientId} />}
+                {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={onSave} />}
             </div>
         </div>
     );
