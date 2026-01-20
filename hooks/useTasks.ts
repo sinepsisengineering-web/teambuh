@@ -2,12 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Task, LegalEntity, TaskStatus } from '../types';
 import { generateTasksForLegalEntity, updateTaskStatuses } from '../services/taskGenerator';
-import { checkNotificationsOnStartup } from '../services/notificationService';
-import { 
-  initializeAllTimers,
-  scheduleNotificationsForTask,
-  cancelNotificationsForTask
-} from '../services/timedNotificationService';
+// TODO: Переделать уведомления для веб-версии
 
 export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<string, LegalEntity>) => {
   const [tasks, setTasks] = useState<Task[]>(() => {
@@ -38,16 +33,16 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
   // <<< ВОЗВРАЩАЕМ ЭТОТ useEffect К ЕГО ПРОСТОЙ И ОРИГИНАЛЬНОЙ ВЕРСИИ >>>
   useEffect(() => {
     if (legalEntities.length === 0) return;
-    
+
     // Генератор теперь сам знает, как правильно обработать каждого клиента, используя его `createdAt`
     const expectedAutoTasks = legalEntities.flatMap(le => generateTasksForLegalEntity(le));
-    
+
     setTasks(currentTasks => {
       const manualTasks = currentTasks.filter(t => !t.isAutomatic);
       const existingAutoTasksMap = new Map<string, Task>();
       currentTasks.forEach(t => {
         if (t.isAutomatic && t.id) {
-            existingAutoTasksMap.set(t.id, t);
+          existingAutoTasksMap.set(t.id, t);
         }
       });
       const updatedAutoTasks = expectedAutoTasks.map((expectedTask: Task) => {
@@ -64,18 +59,14 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
   }, [legalEntities]); // Зависимость от legalEntities остается, это правильно
 
   useEffect(() => {
-    if (tasks.length > 0 && legalEntityMap.size > 0 && !notificationCheckRef.current) {
-      checkNotificationsOnStartup(tasks, legalEntityMap);
-      initializeAllTimers(tasks);
-      notificationCheckRef.current = true;
-    }
+    // TODO: Переделать уведомления для веб-версии
   }, [tasks, legalEntityMap]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
       console.log('Плановая проверка и обновление статусов задач...');
       setTasks(currentTasks => updateTaskStatuses(currentTasks));
-    }, 60 * 1000); 
+    }, 60 * 1000);
 
     return () => clearInterval(intervalId);
   }, []);
@@ -102,9 +93,7 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
       updatedTasks = [...tasks, newTask];
     }
     setTasks(updateTaskStatuses(updatedTasks));
-    if (savedTask) {
-      scheduleNotificationsForTask(savedTask);
-    }
+    // TODO: Уведомления для веб-версии
     setIsTaskModalOpen(false);
     setTaskToEdit(null);
   };
@@ -114,7 +103,7 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
       let targetTask: Task | undefined;
       const newTasks = currentTasks.map(t => {
         if (t.id === taskId) {
-          const temporaryStatus = t.status === TaskStatus.Completed 
+          const temporaryStatus = t.status === TaskStatus.Completed
             ? TaskStatus.Upcoming
             : TaskStatus.Completed;
           targetTask = { ...t, status: temporaryStatus };
@@ -123,18 +112,14 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
         return t;
       });
       if (targetTask) {
-        if (targetTask.status === TaskStatus.Completed) {
-          cancelNotificationsForTask(targetTask.id);
-        } else {
-          scheduleNotificationsForTask(targetTask);
-        }
+        // TODO: Уведомления для веб-версии
       }
       return updateTaskStatuses(newTasks);
     });
   };
 
   const handleDeleteTask = (taskId: string) => {
-    cancelNotificationsForTask(taskId);
+    // TODO: Уведомления для веб-версии
     setTasks(tasks.filter(t => t.id !== taskId));
     setIsTaskDetailModalOpen(false);
   };
@@ -154,7 +139,7 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
     setTasksForDetailView(tasks);
     setIsTaskDetailModalOpen(true);
   };
-  
+
   const handleEditTaskFromDetail = (task: Task) => {
     setIsTaskDetailModalOpen(false);
     setTimeout(() => {
@@ -166,26 +151,25 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
   const handleBulkComplete = (taskIds: string[]) => {
     const updatedTasks = tasks.map(t => {
       if (taskIds.includes(t.id)) {
-        cancelNotificationsForTask(t.id);
+        // TODO: Уведомления для веб-версии
         return { ...t, status: TaskStatus.Completed };
       }
       return t;
     });
     setTasks(updateTaskStatuses(updatedTasks));
   };
-  
+
   const handleBulkDelete = (taskIds: string[]) => {
-      const idsToDelete = new Set(taskIds);
-      taskIds.forEach(id => cancelNotificationsForTask(id));
-      setTasks(prevTasks => prevTasks.filter(task => !idsToDelete.has(task.id)));
+    const idsToDelete = new Set(taskIds);
+    // TODO: Уведомления для веб-версии
+    setTasks(prevTasks => prevTasks.filter(task => !idsToDelete.has(task.id)));
   };
 
   const handleDeleteTasksForLegalEntity = (legalEntityId: string) => {
-      setTasks(prevTasks => {
-          const tasksToDelete = prevTasks.filter(task => task.legalEntityId === legalEntityId);
-          tasksToDelete.forEach(task => cancelNotificationsForTask(task.id));
-          return prevTasks.filter(task => task.legalEntityId !== legalEntityId);
-      });
+    setTasks(prevTasks => {
+      // TODO: Уведомления для веб-версии
+      return prevTasks.filter(task => task.legalEntityId !== legalEntityId);
+    });
   };
 
   return {

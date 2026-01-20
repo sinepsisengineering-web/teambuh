@@ -12,13 +12,18 @@ import { TaskDetailModal } from './components/TaskDetailModal';
 import { TasksListView } from './components/TasksListView';
 import { ArchiveView } from './components/ArchiveView';
 import { SettingsView } from './components/SettingsView';
+import { DashboardView } from './components/DashboardView';
+import { StaffView } from './components/StaffView';
+import { ClientsView } from './components/ClientsView';
+import { LoginScreen } from './components/LoginScreen';
 import { LegalEntity, Task, Note } from './types';
 import { DUMMY_CLIENTS } from './dummy-data';
 import { useTasks } from './hooks/useTasks';
 import { useConfirmation } from './contexts/ConfirmationProvider';
+import { useAuth } from './contexts/AuthContext';
 import { initializeHolidayService } from './services/holidayService';
 
-type View = 'calendar' | 'tasks' | 'clients' | 'archive' | 'settings';
+type View = 'dashboard' | 'calendar' | 'tasks' | 'clients' | 'staff' | 'archive' | 'settings';
 
 const parseLegalEntity = (le: any): LegalEntity => {
     let migratedNotes: Note[] = [];
@@ -39,7 +44,31 @@ const parseLegalEntity = (le: any): LegalEntity => {
 
 const App: React.FC = () => {
     const confirm = useConfirmation();
+    const { isAuthenticated, isLoading: authLoading } = useAuth();
 
+    // ВРЕМЕННО: Сразу показываем LoginScreen для теста
+    // return <LoginScreen />;
+
+    // Показываем загрузку пока проверяем авторизацию
+    if (authLoading) {
+        return (
+            <div className="min-h-screen bg-content flex items-center justify-center">
+                <div className="text-primary text-xl font-bold">ЗАГРУЗКА...</div>
+            </div>
+        );
+    }
+
+    // Если не авторизован — показываем экран входа
+    if (!isAuthenticated) {
+        return <LoginScreen />;
+    }
+
+    // Основное приложение (будет отрисовано ниже)
+    return <AuthenticatedApp confirm={confirm} />;
+};
+
+// Выносим основную логику в отдельный компонент
+const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }> = ({ confirm }) => {
     const [legalEntities, setLegalEntities] = useState<LegalEntity[]>(() => {
         try {
             const savedLegalEntities = localStorage.getItem('legalEntities');
@@ -237,19 +266,21 @@ const App: React.FC = () => {
             />;
         }
         switch (activeView) {
+            case 'dashboard': return <DashboardView />;
             case 'calendar': return <Calendar tasks={tasks} legalEntities={activeLegalEntities} onUpdateTaskStatus={() => { }} onAddTask={(date) => handleOpenNewTaskForm({ dueDate: date })} onOpenDetail={handleOpenTaskDetail} onDeleteTask={handleDeleteTask} />;
             case 'tasks':
-                const addTaskButton = (<button onClick={() => handleOpenNewTaskForm()} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors shadow" > <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg> Добавить задачу </button>);
+                const addTaskButton = (<button onClick={() => handleOpenNewTaskForm()} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-hover transition-colors shadow-glow" > <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg> Добавить задачу </button>);
                 return <TasksListView key={tasksViewKey} tasks={tasks} legalEntities={activeLegalEntities} onOpenDetail={handleOpenTaskDetail} onBulkUpdate={handleBulkComplete} onBulkDelete={handleBulkDelete} onDeleteTask={handleDeleteTask} customAddTaskButton={addTaskButton} />;
-            case 'clients': return <ClientList legalEntities={activeLegalEntities} onSelectLegalEntity={setSelectedLegalEntity} onAddLegalEntity={() => handleOpenLegalEntityForm(null)} />;
+            case 'clients': return <ClientsView />;
+            case 'staff': return <StaffView />;
             case 'archive': return <ArchiveView archivedLegalEntities={archivedLegalEntities} onUnarchive={handleUnarchiveLegalEntity} onDelete={() => { }} />;
-            case 'settings': return <SettingsView onClearData={() => { }} />;
+            case 'settings': return <SettingsView />;
             default: return null;
         }
     };
 
     return (
-        <div className="flex h-screen bg-slate-100 font-sans">
+        <div className="flex h-screen bg-content font-sans">
             <Sidebar activeView={activeView} setActiveView={(v) => { setSelectedLegalEntity(null); if (v === 'tasks') { setTasksViewKey(prev => prev + 1); } setActiveView(v as View); }} />
             <main className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex-1 p-8 overflow-y-auto">

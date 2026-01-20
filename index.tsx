@@ -1,8 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-// ==================== ИЗМЕНЕНИЕ 1: Импортируем наш провайдер ====================
 import { ConfirmationProvider } from './contexts/ConfirmationProvider';
+import { AuthProvider } from './contexts/AuthContext';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -12,9 +12,10 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    {/* ==================== ИЗМЕНЕНИЕ 2: Оборачиваем App ==================== */}
-    <ConfirmationProvider>
-      <App />
-    </ConfirmationProvider>
+    <AuthProvider>
+      <ConfirmationProvider>
+        <App />
+      </ConfirmationProvider>
+    </AuthProvider>
   </React.StrictMode>
 );
