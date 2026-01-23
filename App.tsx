@@ -16,12 +16,13 @@ import { DashboardView } from './components/DashboardView';
 import { StaffView } from './components/StaffView';
 import { ClientsView } from './components/ClientsView';
 import { LoginScreen } from './components/LoginScreen';
-import { LegalEntity, Task, Note } from './types';
-import { DUMMY_CLIENTS } from './dummy-data';
+import { LegalEntity, Task, Note, Employee } from './types';
+import { DUMMY_CLIENTS, DUMMY_EMPLOYEES } from './dummy-data';
 import { useTasks } from './hooks/useTasks';
 import { useConfirmation } from './contexts/ConfirmationProvider';
 import { useAuth } from './contexts/AuthContext';
 import { initializeHolidayService } from './services/holidayService';
+import { storage } from './services/storageService';
 
 type View = 'dashboard' | 'calendar' | 'tasks' | 'clients' | 'staff' | 'archive' | 'settings';
 
@@ -69,24 +70,34 @@ const App: React.FC = () => {
 
 // Выносим основную логику в отдельный компонент
 const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }> = ({ confirm }) => {
-    const [legalEntities, setLegalEntities] = useState<LegalEntity[]>(() => {
-        try {
-            const savedLegalEntities = localStorage.getItem('legalEntities');
-            if (savedLegalEntities) return JSON.parse(savedLegalEntities).map(parseLegalEntity);
-            const savedClients = localStorage.getItem('clients');
-            if (savedClients) {
-                const oldClients: any[] = JSON.parse(savedClients);
-                const migratedEntities: LegalEntity[] = oldClients.flatMap(client => (client.legalEntities || []).map((le: any) => parseLegalEntity({ ...le, isArchived: client.isArchived || false, })));
-                localStorage.setItem('legalEntities', JSON.stringify(migratedEntities));
-                localStorage.removeItem('clients');
-                return migratedEntities;
+    // Данные загружаются с сервера при монтировании
+    const [legalEntities, setLegalEntities] = useState<LegalEntity[]>([]);
+    const [employees, setEmployees] = useState<Employee[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Загрузка данных с сервера при старте
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                const [loadedClients, loadedEmployees] = await Promise.all([
+                    storage.loadAllClients(),
+                    storage.loadAllEmployees()
+                ]);
+
+                // Используем только данные с сервера (без dummy)
+                setLegalEntities(loadedClients.map(parseLegalEntity));
+                setEmployees(loadedEmployees);
+            } catch (error) {
+                console.error('Failed to load data from server:', error);
+                // Если сервер недоступен — начинаем с пустых данных
+                setLegalEntities([]);
+                setEmployees([]);
+            } finally {
+                setIsLoading(false);
             }
-            return DUMMY_CLIENTS.flatMap(client => client.legalEntities.map((le: any) => parseLegalEntity({ ...le, isArchived: client.isArchived || false, })));
-        } catch (error) {
-            console.error("Failed to load or migrate data from localStorage", error);
-            return DUMMY_CLIENTS.flatMap(client => client.legalEntities.map((le: any) => parseLegalEntity({ ...le, isArchived: client.isArchived || false, })));
-        }
-    });
+        };
+        loadData();
+    }, []);
 
     const [selectedLegalEntity, setSelectedLegalEntity] = useState<LegalEntity | null>(null);
     const [tasksViewKey, setTasksViewKey] = useState(0);
@@ -127,28 +138,28 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
 
     useEffect(() => { localStorage.setItem('legalEntities', JSON.stringify(legalEntities)); }, [legalEntities]);
 
-    const handleSaveLegalEntity = (entityData: LegalEntity) => {
-        const entityExists = entityData.id && legalEntities.some(le => le.id === entityData.id);
+    const handleSaveLegalEntity = async (entityData: LegalEntity) => {
+        try {
+            // Сохраняем через сервер API
+            const savedEntity = await storage.saveClient(entityData);
 
-        if (entityExists) {
-            // Логика обновления существующего клиента
-            const updatedEntities = legalEntities.map(le => (le.id === entityData.id ? entityData : le));
-            setLegalEntities(updatedEntities);
-            if (selectedLegalEntity && selectedLegalEntity.id === entityData.id) {
-                setSelectedLegalEntity(entityData);
+            const entityExists = legalEntities.some(le => le.id === savedEntity.id);
+
+            if (entityExists) {
+                const updatedEntities = legalEntities.map(le => (le.id === savedEntity.id ? savedEntity : le));
+                setLegalEntities(updatedEntities);
+                if (selectedLegalEntity && selectedLegalEntity.id === savedEntity.id) {
+                    setSelectedLegalEntity(savedEntity);
+                }
+            } else {
+                setLegalEntities(prev => [...prev, savedEntity]);
             }
-        } else {
-            // <<< ДОБАВЛЕНА ЗАПИСЬ createdAt ПРИ СОЗДАНИИ НОВОГО КЛИЕНТА >>>
-            const newLegalEntity = {
-                ...entityData,
-                id: `le-${Date.now()}-${Math.random()}`,
-                createdAt: new Date()
-            };
-            setLegalEntities(prev => [...prev, newLegalEntity]);
-        }
 
-        setIsLegalEntityModalOpen(false);
-        setLegalEntityToEdit(null);
+            setIsLegalEntityModalOpen(false);
+            setLegalEntityToEdit(null);
+        } catch (error) {
+            console.error('Failed to save client:', error);
+        }
     };
 
     const handleAddNote = (legalEntityId: string, noteText: string) => {
@@ -225,22 +236,46 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
         setLegalEntities(prev => prev.map(le => (le.id === entityId ? { ...le, isArchived: false } : le)));
     };
 
-    const handleDeleteLegalEntity = async (entity: LegalEntity) => {
-        const isConfirmed = await confirm({
+    const handleDeleteLegalEntity = (legalEntity: LegalEntity) => {
+        confirm({
             title: 'Удаление клиента',
-            message: `Вы уверены, что хотите удалить клиента «${entity.name}»? Все связанные с ним задачи также будут безвозвратно удалены.`,
-            confirmButtonText: 'Удалить клиента',
-            confirmButtonClass: 'bg-red-600 hover:bg-red-700'
+            message: `Вы уверены, что хотите удалить клиента "${legalEntity.name}"? Это действие нельзя отменить.`,
+            confirmText: 'Удалить',
+            cancelText: 'Отмена',
+            type: 'danger',
+            onConfirm: () => {
+                handleDeleteTasksForLegalEntity(legalEntity.id); // Keep this line from original
+                setLegalEntities(prev => prev.filter(le => le.id !== legalEntity.id));
+                setSelectedLegalEntity(null);
+                setActiveView('clients');
+            }
         });
-
-        if (isConfirmed) {
-            handleDeleteTasksForLegalEntity(entity.id);
-            setLegalEntities(prev => prev.filter(le => le.id !== entity.id));
-            if (selectedLegalEntity?.id === entity.id) setSelectedLegalEntity(null);
-        }
     };
 
-    const handleOpenLegalEntityForm = (entity: LegalEntity | null = null) => {
+    // --- Handlers for Employees ---
+
+    const handleSaveEmployee = (employee: Employee) => {
+        setEmployees(prev => {
+            const exists = prev.find(e => e.id === employee.id);
+            if (exists) {
+                return prev.map(e => e.id === employee.id ? employee : e);
+            }
+            return [...prev, employee];
+        });
+    };
+
+    const handleDeleteEmployee = (employee: Employee) => {
+        confirm({
+            title: 'Удаление сотрудника',
+            message: `Вы уверены, что хотите удалить сотрудника "${employee.lastName} ${employee.firstName}"?`,
+            confirmText: 'Удалить',
+            cancelText: 'Отмена',
+            type: 'danger',
+            onConfirm: () => {
+                setEmployees(prev => prev.filter(e => e.id !== employee.id));
+            }
+        });
+    }; const handleOpenLegalEntityForm = (entity: LegalEntity | null = null) => {
         setLegalEntityToEdit(entity ? { ...entity } : null);
         setIsLegalEntityModalOpen(true);
     };
@@ -276,8 +311,13 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                 onSave={handleSaveLegalEntity}
                 onDelete={handleDeleteLegalEntity}
                 onArchive={handleArchiveLegalEntity}
+                employees={employees}
             />;
-            case 'staff': return <StaffView />;
+            case 'staff': return <StaffView
+                employees={employees}
+                onSave={handleSaveEmployee}
+                onDelete={handleDeleteEmployee}
+            />;
             case 'archive': return <ArchiveView archivedLegalEntities={archivedLegalEntities} onUnarchive={handleUnarchiveLegalEntity} onDelete={() => { }} />;
             case 'settings': return <SettingsView />;
             default: return null;

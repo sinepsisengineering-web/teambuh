@@ -74,3 +74,53 @@ export const DUMMY_CLIENTS: Client[] = [
     legalEntities: DUMMY_LEGAL_ENTITIES
   }
 ];
+
+import { Employee, EmploymentType, UploadedDocument } from './types';
+
+export const DUMMY_EMPLOYEES: Employee[] = [
+  {
+    id: '1', lastName: 'Иванова', firstName: 'Мария', middleName: 'Петровна',
+    email: 'maria@teambuh.ru', phone: '+7 (999) 123-45-67',
+    employmentType: 'staff', workType: 'office',
+    hireDate: '2023-01-15', passport: '1234 567890', inn: '123456789012', snils: '123-456-789 00',
+    bankName: 'Сбербанк', bankAccount: '40817810099910004567', cardNumber: '4276 **** 1234',
+    salary: '50000', percent: '30', isActive: true, isBlocked: false,
+    role: 'accountant',
+    documents: [
+      { id: 'd1', name: 'Паспорт.pdf', uploadDate: new Date('2023-01-15'), size: 1245000, type: 'pdf' },
+      { id: 'd2', name: 'Трудовой договор.pdf', uploadDate: new Date('2023-01-15'), size: 890000, type: 'pdf' },
+    ]
+  },
+  {
+    id: '2', lastName: 'Петров', firstName: 'Алексей', middleName: 'Иванович',
+    email: 'alex@teambuh.ru', phone: '+7 (999) 987-65-43',
+    employmentType: 'selfemployed', hireDate: '2023-06-01',
+    inn: '987654321098', bankName: 'Тинькофф', bankAccount: '40817810099910001234', cardNumber: '5536 **** 5678',
+    percent: '35', isActive: true, isBlocked: false,
+    role: 'accountant',
+    documents: [{ id: 'd3', name: 'Договор ГПХ.pdf', uploadDate: new Date('2023-06-01'), size: 567000, type: 'pdf' }]
+  },
+  {
+    id: '3', lastName: 'Сидорова', firstName: 'Елена', middleName: 'Викторовна',
+    email: 'elena@teambuh.ru', phone: '+7 (999) 555-44-33',
+    employmentType: 'ip', hireDate: '2022-03-10',
+    inn: '111222333444', ogrnip: '315774600012345',
+    bankName: 'Альфа-Банк', bankAccount: '40802810099910009999', bik: '044525593', corrAccount: '30101810200000000593',
+    percent: '40', isActive: true, isBlocked: false,
+    role: 'accountant',
+    documents: [
+      { id: 'd4', name: 'Договор с ИП.pdf', uploadDate: new Date('2022-03-10'), size: 1123000, type: 'pdf' },
+      { id: 'd5', name: 'Выписка ЕГРИП.pdf', uploadDate: new Date('2022-03-10'), size: 445000, type: 'pdf' },
+    ]
+  },
+  {
+    id: '4', lastName: 'Козлов', firstName: 'Дмитрий', middleName: 'Сергеевич',
+    email: 'dmitry@teambuh.ru', phone: '+7 (999) 111-22-33',
+    employmentType: 'staff', workType: 'remote',
+    hireDate: '2024-01-01', passport: '9876 543210', inn: '555666777888', snils: '987-654-321 00',
+    bankName: 'ВТБ', bankAccount: '40817810099910005555', cardNumber: '4272 **** 9999',
+    salary: '45000', percent: '25', isActive: true, isBlocked: false,
+    role: 'assistant',
+    documents: []
+  }
+];

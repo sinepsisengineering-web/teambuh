@@ -3,13 +3,7 @@
 
 import React, { useState } from 'react';
 
-export interface UploadedDocument {
-    id: string;
-    name: string;
-    uploadDate: Date;
-    size: number;
-    type: string;
-}
+import { UploadedDocument } from '../types';
 
 interface DocumentUploadProps {
     documents: UploadedDocument[];

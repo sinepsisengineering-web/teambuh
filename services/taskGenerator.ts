@@ -302,6 +302,11 @@ export const getPredecessorTaskId = (task: Task): string | null => {
  * Проверить, можно ли выполнить задачу (предшественник завершён)
  */
 export const canCompleteTask = (task: Task, allTasks: Task[]): boolean => {
+  // Амнистия для задач прошлых лет — выполняем без проверок
+  const taskYear = new Date(task.dueDate).getFullYear();
+  const currentYear = new Date().getFullYear();
+  if (taskYear < currentYear) return true;
+
   const predecessorId = getPredecessorTaskId(task);
   if (!predecessorId) return true;
 
@@ -315,6 +320,11 @@ export const canCompleteTask = (task: Task, allTasks: Task[]): boolean => {
  * Получить блокирующую задачу-предшественника
  */
 export const getBlockingPredecessor = (task: Task, allTasks: Task[]): Task | null => {
+  // Амнистия для задач прошлых лет — нет блокировки
+  const taskYear = new Date(task.dueDate).getFullYear();
+  const currentYear = new Date().getFullYear();
+  if (taskYear < currentYear) return null;
+
   const predecessorId = getPredecessorTaskId(task);
   if (!predecessorId) return null;
 

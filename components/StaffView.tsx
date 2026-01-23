@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { isWeekend } from '../utils/dateUtils';
 import { isHoliday } from '../services/holidayService';
-import { DocumentUpload, UploadedDocument } from './DocumentUpload';
+import { DocumentUpload } from './DocumentUpload';
 import { MiniCalendar } from './MiniCalendar';
 
 type StaffTab = 'list' | 'details' | 'manage';
@@ -12,16 +12,10 @@ type StaffTab = 'list' | 'details' | 'manage';
 // ============================================
 // Вкладка А: СПИСОК (сетка карточек сотрудников)
 // ============================================
-const StaffListTab: React.FC<{ onSelectEmployee: (id: string) => void }> = ({ onSelectEmployee }) => {
-    const [sortBy, setSortBy] = useState<'alpha' | 'load-asc' | 'load-desc'>('alpha');
+import { Employee, EmploymentType, UploadedDocument } from '../types';
 
-    // Мок-данные сотрудников
-    const employees = [
-        { id: '1', name: 'Иванова Мария', role: 'Бухгалтер', clients: 12, tasks: 34, load: 85 },
-        { id: '2', name: 'Петров Алексей', role: 'Бухгалтер', clients: 8, tasks: 21, load: 60 },
-        { id: '3', name: 'Сидорова Елена', role: 'Бухгалтер', clients: 15, tasks: 42, load: 95 },
-        { id: '4', name: 'Козлов Дмитрий', role: 'Бухгалтер', clients: 5, tasks: 12, load: 35 },
-    ];
+const StaffListTab: React.FC<{ employees: Employee[], onSelectEmployee: (id: string) => void }> = ({ employees, onSelectEmployee }) => {
+    const [sortBy, setSortBy] = useState<'alpha' | 'load-asc' | 'load-desc'>('alpha');
 
     const getLoadColor = (load: number) => {
         if (load >= 90) return 'text-red-500';
@@ -56,24 +50,24 @@ const StaffListTab: React.FC<{ onSelectEmployee: (id: string) => void }> = ({ on
                         {/* Аватар + ФИО */}
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-lg">
-                                {emp.name.charAt(0)}
+                                {emp.lastName.charAt(0)}
                             </div>
                             <div>
-                                <div className="font-semibold text-slate-800">{emp.name}</div>
-                                <div className="text-sm text-slate-500">{emp.role}</div>
+                                <div className="font-semibold text-slate-800">{emp.lastName} {emp.firstName}</div>
+                                <div className="text-sm text-slate-500">{emp.role === 'accountant' ? 'Бухгалтер' : emp.role === 'admin' ? 'Администратор' : 'Помощник'}</div>
                             </div>
                         </div>
 
                         {/* Метрики */}
                         <div className="flex justify-between text-sm text-slate-600 mb-3">
-                            <span>Клиентов: <b>{emp.clients}</b></span>
-                            <span>Задач: <b>{emp.tasks}</b></span>
+                            <span>Клиентов: <b>0</b></span>
+                            <span>Задач: <b>0</b></span>
                         </div>
 
                         {/* Нагрузка */}
                         <div className="text-center">
-                            <span className={`text-3xl font-bold ${getLoadColor(emp.load)}`}>
-                                {emp.load}%
+                            <span className={`text-3xl font-bold ${getLoadColor(0)}`}>
+                                0%
                             </span>
                             <div className="text-xs text-slate-400 mt-1">Нагрузка</div>
                         </div>
@@ -89,15 +83,8 @@ const StaffListTab: React.FC<{ onSelectEmployee: (id: string) => void }> = ({ on
 // ============================================
 // Используем глобальный MiniCalendar из ./MiniCalendar.tsx
 
-const StaffDetailsTab: React.FC<{ employeeId: string | null }> = ({ employeeId }) => {
-    const [selectedEmployee, setSelectedEmployee] = useState(employeeId || '1');
-
-    const employees = [
-        { id: '1', name: 'Иванова Мария' },
-        { id: '2', name: 'Петров Алексей' },
-        { id: '3', name: 'Сидорова Елена' },
-        { id: '4', name: 'Козлов Дмитрий' },
-    ];
+const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | null }> = ({ employees, employeeId }) => {
+    const [selectedEmployee, setSelectedEmployee] = useState(employeeId || (employees.length > 0 ? employees[0].id : ''));
 
     const clients = [
         'ООО "Рога и Копыта"',
@@ -120,7 +107,7 @@ const StaffDetailsTab: React.FC<{ employeeId: string | null }> = ({ employeeId }
                     className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                     {employees.map(e => (
-                        <option key={e.id} value={e.id}>{e.name}</option>
+                        <option key={e.id} value={e.id}>{e.lastName} {e.firstName}</option>
                     ))}
                 </select>
                 <button className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors">
@@ -234,65 +221,80 @@ const StaffDetailsTab: React.FC<{ employeeId: string | null }> = ({ employeeId }
 // ============================================
 // Вкладка В: УПРАВЛЕНИЕ (редактор данных)
 // ============================================
-type EmploymentType = 'staff' | 'selfemployed' | 'ip';
+// ============================================
+// Вкладка В: УПРАВЛЕНИЕ (редактор данных)
+// ============================================
 
-const StaffManageTab: React.FC = () => {
-    const [selectedEmployee, setSelectedEmployee] = useState<string | null>('1');
+interface StaffManageTabProps {
+    employees: Employee[];
+    onSave: (emp: Employee) => void;
+    onDelete: (emp: Employee) => void;
+}
+
+const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDelete }) => {
+    const [selectedEmployee, setSelectedEmployee] = useState<string | null>(employees.length > 0 ? employees[0].id : null);
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('staff');
 
-    // Мок-данные сотрудников с полной информацией
-    const employeesData = [
-        {
-            id: '1', lastName: 'Иванова', firstName: 'Мария', middleName: 'Петровна',
-            email: 'maria@teambuh.ru', phone: '+7 (999) 123-45-67',
-            employmentType: 'staff' as EmploymentType, workType: 'office' as const,
-            hireDate: '2023-01-15', passport: '1234 567890', inn: '123456789012', snils: '123-456-789 00',
-            bankName: 'Сбербанк', bankAccount: '40817810099910004567', cardNumber: '4276 **** 1234',
-            salary: '50000', percent: '30', isActive: true, isBlocked: false,
-            documents: [
-                { id: 'd1', name: 'Паспорт.pdf', uploadDate: new Date('2023-01-15'), size: 1245000, type: 'pdf' },
-                { id: 'd2', name: 'Трудовой договор.pdf', uploadDate: new Date('2023-01-15'), size: 890000, type: 'pdf' },
-            ] as UploadedDocument[]
-        },
-        {
-            id: '2', lastName: 'Петров', firstName: 'Алексей', middleName: 'Иванович',
-            email: 'alex@teambuh.ru', phone: '+7 (999) 987-65-43',
-            employmentType: 'selfemployed' as EmploymentType, hireDate: '2023-06-01',
-            inn: '987654321098', bankName: 'Тинькофф', bankAccount: '40817810099910001234', cardNumber: '5536 **** 5678',
-            percent: '35', isActive: true, isBlocked: false,
-            documents: [{ id: 'd3', name: 'Договор ГПХ.pdf', uploadDate: new Date('2023-06-01'), size: 567000, type: 'pdf' }] as UploadedDocument[]
-        },
-        {
-            id: '3', lastName: 'Сидорова', firstName: 'Елена', middleName: 'Викторовна',
-            email: 'elena@teambuh.ru', phone: '+7 (999) 555-44-33',
-            employmentType: 'ip' as EmploymentType, hireDate: '2022-03-10',
-            inn: '111222333444', ogrnip: '315774600012345',
-            bankName: 'Альфа-Банк', bankAccount: '40802810099910009999', bik: '044525593', corrAccount: '30101810200000000593',
-            percent: '40', isActive: true, isBlocked: false,
-            documents: [
-                { id: 'd4', name: 'Договор с ИП.pdf', uploadDate: new Date('2022-03-10'), size: 1123000, type: 'pdf' },
-                { id: 'd5', name: 'Выписка ЕГРИП.pdf', uploadDate: new Date('2022-03-10'), size: 445000, type: 'pdf' },
-            ] as UploadedDocument[]
-        },
-        {
-            id: '4', lastName: 'Козлов', firstName: 'Дмитрий', middleName: 'Сергеевич',
-            email: 'dmitry@teambuh.ru', phone: '+7 (999) 111-22-33',
-            employmentType: 'staff' as EmploymentType, workType: 'remote' as const,
-            hireDate: '2024-01-01', passport: '9876 543210', inn: '555666777888', snils: '987-654-321 00',
-            bankName: 'ВТБ', bankAccount: '40817810099910005555', cardNumber: '4272 **** 9999',
-            salary: '45000', percent: '25', isActive: true, isBlocked: false,
-            documents: [] as UploadedDocument[]
-        },
-    ];
-
     // Получаем данные выбранного сотрудника
-    const currentEmployee = employeesData.find(e => e.id === selectedEmployee) || employeesData[0];
-    const isExisting = !isAddingNew && currentEmployee;
-    const empType = isAddingNew ? newEmploymentType : currentEmployee.employmentType;
+    const currentEmployee = employees.find(e => e.id === selectedEmployee) || (employees.length > 0 ? employees[0] : undefined);
+    const isExisting = !isAddingNew && !!currentEmployee;
+    const empType = isAddingNew ? newEmploymentType : (currentEmployee?.employmentType || 'staff');
+
+    // Form handlers (using refs or state would be better, but for now we read directly if possible, or bind inputs??
+    // Simplified: Just direct state/ref usage would be complex to refactor all inputs.
+    // Let's implement full saving logic with state or refs.
+    // Current code uses `defaultValue`. We need to switch to controlled components or collect data on save.
+    // For minimal refactor, let's collect data from DOM or use state for modified fields.
+    // Given the previous code used defaultValue, it wasn't interactive.
+    // I will simulate saving by using the existing mock logic structure but calling onSave.
+    // Wait, the previous code didn't have inputs state! It just displayed mock data. 
+    // I need to properly implement the form state to support editing.
+    // For this step I will just map the props and provide a basic implementation that works with what we have.
+    // I will replace `employeesData` with `employees` prop usage.
+
+    // ... Actually, I need to make the inputs controlled or use refs. 
+    // I will use a simple form state object initialized from currentEmployee.
+
+    const [formData, setFormData] = useState<Partial<Employee>>({});
+
+    React.useEffect(() => {
+        if (isExisting && currentEmployee) {
+            setFormData({ ...currentEmployee });
+        } else if (isAddingNew) {
+            setFormData({
+                id: `emp-${Date.now()}`,
+                employmentType: newEmploymentType,
+                isActive: true,
+                isBlocked: false,
+                documents: []
+            });
+        }
+    }, [selectedEmployee, isAddingNew, currentEmployee, newEmploymentType]);
 
     const handleSelectEmployee = (id: string) => { setSelectedEmployee(id); setIsAddingNew(false); };
     const handleAddNew = () => { setIsAddingNew(true); setSelectedEmployee(null); setNewEmploymentType('staff'); };
+
+    const handleSaveClick = () => {
+        // Collect data (in a real app we'd use form state for everything)
+        // For now, let's assume formData is updated or just pass back what we have + type changes.
+        // Since I can't easily rewrite all inputs to controlled in one go without making the file huge diff,
+        // I will trust the user to fill the form and I'll just save the `formData` which needs to be updated by inputs.
+        // IMPORTANT: The original code provided NO mechanism to update values (just defaultValues).
+        // I MUST make inputs controlled or use refs to support saving. 
+        // I will use `onChange` to update `formData`.
+
+        if (formData.lastName) {
+            onSave(formData as Employee);
+            setIsAddingNew(false);
+            if (formData.id) setSelectedEmployee(formData.id);
+        }
+    };
+
+    const updateField = (field: keyof Employee, value: any) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+    };
+
     const handleUploadDocument = (file: File) => console.log('Upload:', file.name);
     const handleDeleteDocument = (docId: string) => console.log('Delete:', docId);
     const handleViewDocument = (doc: UploadedDocument) => { console.log('View:', doc.name); window.open('#', '_blank'); };
@@ -300,6 +302,19 @@ const StaffManageTab: React.FC = () => {
     const inputClass = "w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-primary/30";
     const inputReadonlyClass = "w-full px-2 py-1 text-xs border border-slate-100 rounded bg-slate-50 text-slate-500";
     const labelClass = "block text-[10px] text-slate-500 mb-0.5";
+
+    if (!currentEmployee && !isAddingNew) return <div className="p-4">Нет сотрудников</div>;
+
+    // Helper for inputs
+    const Input = ({ field, type = "text", readOnly = false }: { field: keyof Employee, type?: string, readOnly?: boolean }) => (
+        <input
+            type={type}
+            className={readOnly ? inputReadonlyClass : inputClass}
+            value={(formData as any)[field] || ''}
+            onChange={e => updateField(field, e.target.value)}
+            readOnly={readOnly}
+        />
+    );
 
     return (
         <div className="h-full flex gap-4">
@@ -317,7 +332,7 @@ const StaffManageTab: React.FC = () => {
                         ) : (
                             <div className="flex gap-1">
                                 {[{ value: 'staff', label: '👔 Штат' }, { value: 'selfemployed', label: '📱 СЗ' }, { value: 'ip', label: '🏢 ИП' }].map(opt => (
-                                    <button key={opt.value} onClick={() => setNewEmploymentType(opt.value as EmploymentType)}
+                                    <button key={opt.value} onClick={() => { setNewEmploymentType(opt.value as EmploymentType); updateField('employmentType', opt.value); }}
                                         className={`flex-1 py-1 rounded text-[10px] font-medium transition-colors ${newEmploymentType === opt.value ? 'bg-primary text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
                                         {opt.label}
                                     </button>
@@ -343,31 +358,14 @@ const StaffManageTab: React.FC = () => {
                             </div>
                             {/* Поля ФИО */}
                             <div className="flex-1 grid grid-cols-3 gap-2">
-                                <div>
-                                    <label className={labelClass}>Фамилия</label>
-                                    <input type="text" className={inputClass} defaultValue={currentEmployee.lastName} />
-                                </div>
-                                <div>
-                                    <label className={labelClass}>Имя</label>
-                                    <input type="text" className={inputClass} defaultValue={currentEmployee.firstName} />
-                                </div>
-                                <div>
-                                    <label className={labelClass}>Отчество</label>
-                                    <input type="text" className={inputClass} defaultValue={currentEmployee.middleName} />
-                                </div>
-                                <div>
-                                    <label className={labelClass}>Email (логин)</label>
-                                    <input type="email" className={inputClass} defaultValue={currentEmployee.email} />
-                                </div>
-                                <div>
-                                    <label className={labelClass}>Телефон</label>
-                                    <input type="tel" className={inputClass} defaultValue={currentEmployee.phone} />
-                                </div>
+                                <div><label className={labelClass}>Фамилия</label><Input field="lastName" /></div>
+                                <div><label className={labelClass}>Имя</label><Input field="firstName" /></div>
+                                <div><label className={labelClass}>Отчество</label><Input field="middleName" /></div>
+                                <div><label className={labelClass}>Email (логин)</label><Input field="email" type="email" /></div>
+                                <div><label className={labelClass}>Телефон</label><Input field="phone" type="tel" /></div>
                                 <div>
                                     <label className={labelClass}>Пароль</label>
-                                    <button className="w-full px-2 py-1 bg-slate-100 text-slate-600 rounded text-[10px] hover:bg-slate-200">
-                                        Сбросить
-                                    </button>
+                                    <button className="w-full px-2 py-1 bg-slate-100 text-slate-600 rounded text-[10px] hover:bg-slate-200">Сбросить</button>
                                 </div>
                             </div>
                         </div>
@@ -377,37 +375,31 @@ const StaffManageTab: React.FC = () => {
                     <div>
                         <h3 className="text-[10px] font-semibold text-slate-700 mb-1.5 pb-1 border-b border-slate-100">Документы</h3>
                         <div className="grid grid-cols-4 gap-1.5 mb-2">
-                            <div>
-                                <label className={labelClass}>{empType === 'staff' ? 'Дата приёма' : 'Начало'}</label>
-                                <input type="date" className={isExisting ? inputReadonlyClass : inputClass} defaultValue={isAddingNew ? '' : currentEmployee.hireDate} readOnly={!!isExisting} />
-                            </div>
-                            <div>
-                                <label className={labelClass}>ИНН</label>
-                                <input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.inn} />
-                            </div>
+                            <div><label className={labelClass}>{empType === 'staff' ? 'Дата приёма' : 'Начало'}</label><Input field="hireDate" type="date" readOnly={isExisting} /></div>
+                            <div><label className={labelClass}>ИНН</label><Input field="inn" /></div>
                             {empType === 'staff' && (<>
-                                <div><label className={labelClass}>Паспорт</label><input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.passport} /></div>
-                                <div><label className={labelClass}>СНИЛС</label><input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.snils} /></div>
-                                <div><label className={labelClass}>Тип работы</label><select className={inputClass} defaultValue={currentEmployee.workType || 'office'}><option value="office">В офисе</option><option value="remote">Удалённо</option></select></div>
+                                <div><label className={labelClass}>Паспорт</label><Input field="passport" /></div>
+                                <div><label className={labelClass}>СНИЛС</label><Input field="snils" /></div>
+                                <div><label className={labelClass}>Тип работы</label><select className={inputClass} value={formData.workType} onChange={e => updateField('workType', e.target.value)}><option value="office">В офисе</option><option value="remote">Удалённо</option></select></div>
                             </>)}
-                            {empType === 'ip' && <div><label className={labelClass}>ОГРНИП</label><input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.ogrnip} /></div>}
+                            {empType === 'ip' && <div><label className={labelClass}>ОГРНИП</label><Input field="ogrnip" /></div>}
                         </div>
-                        <DocumentUpload documents={isAddingNew ? [] : currentEmployee.documents} onUpload={handleUploadDocument} onDelete={handleDeleteDocument} onView={handleViewDocument} label="Загрузить документ" />
+                        <DocumentUpload documents={formData.documents || []} onUpload={handleUploadDocument} onDelete={handleDeleteDocument} onView={handleViewDocument} label="Загрузить документ" />
                     </div>
 
                     {/* ФИНАНСЫ */}
                     <div>
                         <h3 className="text-[10px] font-semibold text-slate-700 mb-1.5 pb-1 border-b border-slate-100">Финансы</h3>
                         <div className="grid grid-cols-4 gap-1.5">
-                            <div><label className={labelClass}>Банк</label><input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.bankName} /></div>
-                            <div><label className={labelClass}>Р/с</label><input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.bankAccount} /></div>
-                            {(empType === 'staff' || empType === 'selfemployed') && <div><label className={labelClass}>№ карты</label><input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.cardNumber} /></div>}
+                            <div><label className={labelClass}>Банк</label><Input field="bankName" /></div>
+                            <div><label className={labelClass}>Р/с</label><Input field="bankAccount" /></div>
+                            {(empType === 'staff' || empType === 'selfemployed') && <div><label className={labelClass}>№ карты</label><Input field="cardNumber" /></div>}
                             {empType === 'ip' && (<>
-                                <div><label className={labelClass}>БИК</label><input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.bik} /></div>
-                                <div><label className={labelClass}>Корр. счёт</label><input type="text" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.corrAccount} /></div>
+                                <div><label className={labelClass}>БИК</label><Input field="bik" /></div>
+                                <div><label className={labelClass}>Корр. счёт</label><Input field="corrAccount" /></div>
                             </>)}
-                            {empType === 'staff' && <div><label className={labelClass}>Оклад</label><input type="number" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.salary} /></div>}
-                            <div><label className={labelClass}>Процент</label><input type="number" className={inputClass} defaultValue={isAddingNew ? '' : currentEmployee.percent} /></div>
+                            {empType === 'staff' && <div><label className={labelClass}>Оклад</label><Input field="salary" type="number" /></div>}
+                            <div><label className={labelClass}>Процент</label><Input field="percent" type="number" /></div>
                         </div>
                     </div>
 
@@ -417,24 +409,24 @@ const StaffManageTab: React.FC = () => {
                         <div className="flex items-center gap-4">
                             <div>
                                 <label className={labelClass}>Роль в системе</label>
-                                <select className={inputClass} defaultValue="accountant">
+                                <select className={inputClass} value={formData.role || 'accountant'} onChange={e => updateField('role', e.target.value)}>
                                     <option value="admin">Администратор</option>
                                     <option value="accountant">Бухгалтер</option>
                                     <option value="assistant">Помощник бухгалтера</option>
                                 </select>
                             </div>
                             <div className="flex gap-3 pt-3">
-                                <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="radio" name="status" defaultChecked={isAddingNew || currentEmployee.isActive} /><span className="text-green-600">✓ Активен</span></label>
-                                <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="radio" name="status" defaultChecked={!isAddingNew && currentEmployee.isBlocked} /><span className="text-red-500">⛔ Заблокирован</span></label>
+                                <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="radio" checked={formData.isActive} onChange={() => updateField('isActive', true)} /><span className="text-green-600">✓ Активен</span></label>
+                                <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="radio" checked={!formData.isActive} onChange={() => updateField('isActive', false)} /><span className="text-red-500">⛔ Заблокирован</span></label>
                             </div>
                         </div>
                     </div>
 
                     {/* Кнопки */}
                     <div className="flex gap-2 pt-1">
-                        <button className="px-3 py-1 bg-primary text-white text-[10px] rounded hover:bg-primary-hover">{isAddingNew ? 'Создать' : 'Сохранить'}</button>
-                        <button className="px-3 py-1 bg-slate-100 text-slate-600 text-[10px] rounded hover:bg-slate-200">Отмена</button>
-                        {!isAddingNew && <button className="ml-auto px-3 py-1 bg-red-50 text-red-600 text-[10px] rounded hover:bg-red-100">{empType === 'staff' ? 'Уволить' : 'Удалить'}</button>}
+                        <button onClick={handleSaveClick} className="px-3 py-1 bg-primary text-white text-[10px] rounded hover:bg-primary-hover">{isAddingNew ? 'Создать' : 'Сохранить'}</button>
+                        <button onClick={() => isAddingNew ? setIsAddingNew(false) : {}} className="px-3 py-1 bg-slate-100 text-slate-600 text-[10px] rounded hover:bg-slate-200">Отмена</button>
+                        {!isAddingNew && isExisting && currentEmployee && <button onClick={() => onDelete(currentEmployee)} className="ml-auto px-3 py-1 bg-red-50 text-red-600 text-[10px] rounded hover:bg-red-100">{empType === 'staff' ? 'Уволить' : 'Удалить'}</button>}
                     </div>
                 </div>
             </div>
@@ -446,7 +438,7 @@ const StaffManageTab: React.FC = () => {
                     {isAddingNew ? 'Создание...' : 'Добавить'}
                 </button>
                 <div className="bg-white rounded-lg border border-slate-200 flex-1 overflow-y-auto">
-                    {employeesData.map(emp => (
+                    {employees.map(emp => (
                         <div key={emp.id} onClick={() => handleSelectEmployee(emp.id)}
                             className={`px-2 py-1.5 cursor-pointer border-b border-slate-100 last:border-0 ${selectedEmployee === emp.id && !isAddingNew ? 'bg-primary/5 border-l-4 border-l-primary' : 'hover:bg-slate-50'}`}>
                             <div className="text-[10px] font-medium text-slate-800">{emp.lastName} {emp.firstName}</div>
@@ -463,7 +455,14 @@ const StaffManageTab: React.FC = () => {
 // ============================================
 // ОСНОВНОЙ КОМПОНЕНТ
 // ============================================
-export const StaffView: React.FC = () => {
+
+interface StaffViewProps {
+    employees?: Employee[];
+    onSave?: (emp: Employee) => void;
+    onDelete?: (emp: Employee) => void;
+}
+
+export const StaffView: React.FC<StaffViewProps> = ({ employees = [], onSave = () => { }, onDelete = () => { } }) => {
     const [activeTab, setActiveTab] = useState<StaffTab>('list');
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
@@ -502,10 +501,11 @@ export const StaffView: React.FC = () => {
             </div>
 
             {/* Контент */}
+            {/* Контент */}
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
-                {activeTab === 'list' && <StaffListTab onSelectEmployee={handleSelectEmployee} />}
-                {activeTab === 'details' && <StaffDetailsTab employeeId={selectedEmployeeId} />}
-                {activeTab === 'manage' && <StaffManageTab />}
+                {activeTab === 'list' && <StaffListTab employees={employees} onSelectEmployee={handleSelectEmployee} />}
+                {activeTab === 'details' && <StaffDetailsTab employees={employees} employeeId={selectedEmployeeId} />}
+                {activeTab === 'manage' && <StaffManageTab employees={employees} onSave={onSave} onDelete={onDelete} />}
             </div>
         </div>
     );

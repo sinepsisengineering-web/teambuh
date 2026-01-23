@@ -2,17 +2,11 @@
 // Новый компонент списка и детализации клиентов
 
 import React, { useState, useMemo } from 'react';
-import { DocumentUpload, UploadedDocument } from './DocumentUpload';
+import { DocumentUpload } from './DocumentUpload';
 import { MiniCalendar } from './MiniCalendar';
-import { LegalEntity, TaxSystem as GlobalTaxSystem, LegalForm as GlobalLegalForm } from '../types';
+import { LegalEntity, TaxSystem as GlobalTaxSystem, LegalForm as GlobalLegalForm, Employee, UploadedDocument } from '../types';
 
-// Props от родительского компонента App.tsx
-interface ClientsViewProps {
-    legalEntities: LegalEntity[];
-    onSave: (entity: LegalEntity) => void;
-    onDelete: (entity: LegalEntity) => void;
-    onArchive: (entity: LegalEntity) => void;
-}
+
 
 // ============================================
 // ТИПЫ
@@ -250,21 +244,38 @@ const adaptLegalEntityToClient = (le: LegalEntity): Client => {
         isNdsPayer: le.isNdsPayer,
         ndsPercent: le.ndsValue ? parseInt(le.ndsValue) : undefined,
         hasEmployees: le.hasEmployees,
-        employeeCount: le.hasEmployees ? 1 : 0, // По умолчанию 1 сотрудник если hasEmployees=true
-        status: 'permanent', // По умолчанию постоянный
-        tariff: { name: 'Стандарт', price: 15000 }, // Заглушка
-        managerId: '',
-        managerName: '-',
+        employeeCount: le.employeeCount || (le.hasEmployees ? 1 : 0),
+        status: le.clientStatus || 'permanent',
+        tariff: {
+            name: le.tariffName || 'Стандарт',
+            price: le.tariffPrice || 15000
+        },
+        managerId: le.accountantId || '',
+        managerName: le.accountantName || '',
         createdAt: le.createdAt instanceof Date ? le.createdAt.toISOString() : String(le.createdAt || ''),
         legalAddress: le.legalAddress,
         actualAddress: le.actualAddress,
-        contacts: [{
-            id: 'main',
-            role: 'Контактное лицо',
-            name: le.contactPerson,
-            phone: le.phone,
-            email: le.email
-        }],
+        // Банковские реквизиты
+        bankName: le.bankName,
+        bankAccount: le.bankAccount,
+        bik: le.bik,
+        corrAccount: le.corrAccount,
+        // Контакты: используем сохранённые или fallback на основной
+        contacts: le.contacts && le.contacts.length > 0
+            ? le.contacts.map(c => ({
+                id: c.id,
+                role: c.role,
+                name: c.name,
+                phone: c.phone,
+                email: c.email
+            }))
+            : [{
+                id: 'main',
+                role: 'Контактное лицо',
+                name: le.contactPerson,
+                phone: le.phone,
+                email: le.email
+            }],
         patents: le.patents?.map(p => ({
             id: p.id,
             name: p.name,
@@ -491,172 +502,184 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
         { id: 'doc2', name: 'Учредительные документы.pdf', size: 1200000, uploadDate: new Date('2024-01-20'), type: 'application/pdf' },
     ];
 
-    if (!client) {
-        return <div className="text-center text-slate-500 py-8">Нет клиентов для отображения</div>;
-    }
+    // Показываем полный layout даже без клиентов (календарь и статистика всегда видны)
+    const hasClient = !!client;
 
     return (
         <div className="h-full flex gap-4">
             {/* Левая часть (70%) */}
             <div className="w-[70%] h-full overflow-y-auto space-y-3">
-                {/* Выбор клиента */}
-                <div className="bg-primary/5 rounded-lg p-2 border border-primary/20">
-                    <select
-                        value={selectedClientId}
-                        onChange={(e) => setSelectedClientId(e.target.value)}
-                        className="w-full px-3 py-2 text-sm font-medium bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
-                    >
-                        {clients.map(c => (
-                            <option key={c.id} value={c.id}>{c.name} — {getLegalFormLabel(c.legalForm)}</option>
-                        ))}
-                    </select>
-                </div>
-
-                {/* Основная информация (всё в одном блоке) */}
-                <div className="bg-white rounded-lg border border-slate-200 p-3">
-                    <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Основная информация</h3>
-                    {/* 1. Основные реквизиты */}
-                    <div className="grid grid-cols-4 gap-3 mb-3">
-                        <div><span className={labelClass}>Название</span><div className={valueClass}>{client.name}</div></div>
-                        <div><span className={labelClass}>Тип</span><div className={valueClass}>{getLegalFormLabel(client.legalForm)}</div></div>
-                        <div><span className={labelClass}>ИНН</span><div className={valueClass}>{client.inn}</div></div>
-                        {client.kpp && <div><span className={labelClass}>КПП</span><div className={valueClass}>{client.kpp}</div></div>}
-                    </div>
-                    <div className="grid grid-cols-4 gap-3 mb-3">
-                        {client.ogrn && <div><span className={labelClass}>ОГРН</span><div className={valueClass}>{client.ogrn}</div></div>}
-                        <div><span className={labelClass}>Система налогообложения</span><div className={valueClass}>{getTaxSystemLabel(client.taxSystem)}</div></div>
-                        <div><span className={labelClass}>НДС</span><div className={`${valueClass} ${client.isNdsPayer ? 'text-orange-600' : ''}`}>{client.isNdsPayer ? `Да, ${client.ndsPercent || 20}%` : 'Нет'}</div></div>
-                        <div><span className={labelClass}>Сотрудники</span><div className={valueClass}>{client.hasEmployees ? `Да, ${client.employeeCount} чел.` : 'Нет'}</div></div>
-                    </div>
-                    {/* 2. Банковские реквизиты */}
-                    {(client.bankName || client.bankAccount) && (
-                        <div className="grid grid-cols-4 gap-3 mb-3 pt-2 border-t border-slate-100">
-                            {client.bankName && <div><span className={labelClass}>Банк</span><div className={valueClass}>{client.bankName}</div></div>}
-                            {client.bankAccount && <div><span className={labelClass}>Расчётный счёт</span><div className={valueClass}>{client.bankAccount}</div></div>}
-                            {client.bik && <div><span className={labelClass}>БИК</span><div className={valueClass}>{client.bik}</div></div>}
-                            {client.corrAccount && <div><span className={labelClass}>Корр. счёт</span><div className={valueClass}>{client.corrAccount}</div></div>}
+                {!hasClient ? (
+                    // Пустое состояние — нет клиентов
+                    <div className="h-full flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="text-slate-400 text-lg mb-2">📋</div>
+                            <div className="text-slate-500">Нет клиентов для отображения</div>
+                            <div className="text-slate-400 text-sm mt-1">Создайте первого клиента во вкладке "Управление"</div>
                         </div>
-                    )}
-                    {/* 3. Адреса */}
-                    {(client.legalAddress || client.actualAddress) && (
-                        <div className="grid grid-cols-2 gap-3 mb-3 pt-2 border-t border-slate-100">
-                            {client.legalAddress && (
-                                <div>
-                                    <span className={labelClass}>Юридический адрес</span>
-                                    <div className={valueClass}>{client.legalAddress}</div>
-                                </div>
-                            )}
-                            {client.actualAddress && (
-                                <div>
-                                    <span className={labelClass}>Фактический адрес</span>
-                                    <div className={valueClass}>{client.actualAddress}</div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    {/* 4. Контакты */}
-                    {client.contacts && client.contacts.length > 0 && (
-                        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-                            {client.contacts.map(contact => (
-                                <div key={contact.id} className="p-2 bg-slate-50 rounded border border-slate-100">
-                                    <div className={labelClass}>{contact.role}</div>
-                                    <div className="text-sm font-semibold text-slate-800">{contact.name}</div>
-                                    <div className="mt-1 space-y-0.5">
-                                        {contact.phone && (
-                                            <div className="text-xs font-medium text-slate-700">
-                                                📞 {contact.phone}
-                                            </div>
-                                        )}
-                                        {contact.email && (
-                                            <div className="text-xs font-medium text-slate-600">
-                                                ✉ {contact.email}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-
-
-                {/* Патенты (только для ИП) */}
-                {client.legalForm === 'ip' && (
-                    <div className="bg-white rounded-lg border border-slate-200 p-3">
-                        <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Патенты</h3>
-                        <PatentsSection patents={client.patents || []} isIP={client.legalForm === 'ip'} />
                     </div>
-                )}
+                ) : (
+                    <>
+                        {/* Выбор клиента */}
+                        <div className="bg-primary/5 rounded-lg p-2 border border-primary/20">
+                            <select
+                                value={selectedClientId}
+                                onChange={(e) => setSelectedClientId(e.target.value)}
+                                className="w-full px-3 py-2 text-sm font-medium bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            >
+                                {clients.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name} — {getLegalFormLabel(c.legalForm)}</option>
+                                ))}
+                            </select>
+                        </div>
 
-                {/* Обслуживание */}
-                <div className="bg-white rounded-lg border border-slate-200 p-3">
-                    <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Обслуживание</h3>
-                    <div className="grid grid-cols-4 gap-3">
-                        <div>
-                            <span className={labelClass}>Статус клиента</span>
-                            <div className={`text-[10px] px-2 py-0.5 rounded-full inline-block ${client.status === 'permanent' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                {client.status === 'permanent' ? 'Постоянный' : 'Разовый'}
+                        {/* Основная информация (всё в одном блоке) */}
+                        <div className="bg-white rounded-lg border border-slate-200 p-3">
+                            <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Основная информация</h3>
+                            {/* 1. Основные реквизиты */}
+                            <div className="grid grid-cols-4 gap-3 mb-3">
+                                <div><span className={labelClass}>Название</span><div className={valueClass}>{client.name}</div></div>
+                                <div><span className={labelClass}>Тип</span><div className={valueClass}>{getLegalFormLabel(client.legalForm)}</div></div>
+                                <div><span className={labelClass}>ИНН</span><div className={valueClass}>{client.inn}</div></div>
+                                {client.kpp && <div><span className={labelClass}>КПП</span><div className={valueClass}>{client.kpp}</div></div>}
                             </div>
+                            <div className="grid grid-cols-4 gap-3 mb-3">
+                                {client.ogrn && <div><span className={labelClass}>ОГРН</span><div className={valueClass}>{client.ogrn}</div></div>}
+                                <div><span className={labelClass}>Система налогообложения</span><div className={valueClass}>{getTaxSystemLabel(client.taxSystem)}</div></div>
+                                <div><span className={labelClass}>НДС</span><div className={`${valueClass} ${client.isNdsPayer ? 'text-orange-600' : ''}`}>{client.isNdsPayer ? `Да, ${client.ndsPercent || 20}%` : 'Нет'}</div></div>
+                                <div><span className={labelClass}>Сотрудники</span><div className={valueClass}>{client.hasEmployees ? `Да, ${client.employeeCount} чел.` : 'Нет'}</div></div>
+                            </div>
+                            {/* 2. Банковские реквизиты */}
+                            {(client.bankName || client.bankAccount) && (
+                                <div className="grid grid-cols-4 gap-3 mb-3 pt-2 border-t border-slate-100">
+                                    {client.bankName && <div><span className={labelClass}>Банк</span><div className={valueClass}>{client.bankName}</div></div>}
+                                    {client.bankAccount && <div><span className={labelClass}>Расчётный счёт</span><div className={valueClass}>{client.bankAccount}</div></div>}
+                                    {client.bik && <div><span className={labelClass}>БИК</span><div className={valueClass}>{client.bik}</div></div>}
+                                    {client.corrAccount && <div><span className={labelClass}>Корр. счёт</span><div className={valueClass}>{client.corrAccount}</div></div>}
+                                </div>
+                            )}
+                            {/* 3. Адреса */}
+                            {(client.legalAddress || client.actualAddress) && (
+                                <div className="grid grid-cols-2 gap-3 mb-3 pt-2 border-t border-slate-100">
+                                    {client.legalAddress && (
+                                        <div>
+                                            <span className={labelClass}>Юридический адрес</span>
+                                            <div className={valueClass}>{client.legalAddress}</div>
+                                        </div>
+                                    )}
+                                    {client.actualAddress && (
+                                        <div>
+                                            <span className={labelClass}>Фактический адрес</span>
+                                            <div className={valueClass}>{client.actualAddress}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            {/* 4. Контакты */}
+                            {client.contacts && client.contacts.length > 0 && (
+                                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                                    {client.contacts.map(contact => (
+                                        <div key={contact.id} className="p-2 bg-slate-50 rounded border border-slate-100">
+                                            <div className={labelClass}>{contact.role}</div>
+                                            <div className="text-sm font-semibold text-slate-800">{contact.name}</div>
+                                            <div className="mt-1 space-y-0.5">
+                                                {contact.phone && (
+                                                    <div className="text-xs font-medium text-slate-700">
+                                                        📞 {contact.phone}
+                                                    </div>
+                                                )}
+                                                {contact.email && (
+                                                    <div className="text-xs font-medium text-slate-600">
+                                                        ✉ {contact.email}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                        <div><span className={labelClass}>Тариф</span><div className="text-sm font-bold text-primary">{client.tariff.name}</div></div>
-                        <div><span className={labelClass}>Бухгалтер</span><div className={valueClass}>{client.managerName}</div></div>
-                        {client.tariff.description && (
-                            <div className="col-span-1">
-                                <span className={labelClass}>Описание услуг</span>
-                                <div className="text-[10px] text-slate-600">{client.tariff.description}</div>
+
+
+
+                        {/* Патенты (только для ИП) */}
+                        {client.legalForm === 'ip' && (
+                            <div className="bg-white rounded-lg border border-slate-200 p-3">
+                                <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Патенты</h3>
+                                <PatentsSection patents={client.patents || []} isIP={client.legalForm === 'ip'} />
                             </div>
                         )}
-                    </div>
-                </div>
 
-                {/* Доступы к сервисам */}
-                <div className="bg-white rounded-lg border border-slate-200 p-3">
-                    <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">🔐 Доступы к сервисам</h3>
-                    <CredentialsSection credentials={client.credentials || []} />
-                </div>
-
-                {/* Документы */}
-                <div className="bg-white rounded-lg border border-slate-200 p-3">
-                    <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Документы</h3>
-                    <DocumentUpload
-                        documents={mockDocs}
-                        onUpload={(f) => console.log('Upload:', f.name)}
-                        onDelete={(id) => console.log('Delete:', id)}
-                        onView={(doc) => console.log('View:', doc)}
-                        label="Загрузить документ"
-                    />
-                </div>
-
-                {/* Кнопка счёт */}
-                <div className="flex gap-2">
-                    <button className="px-4 py-2 bg-primary text-white text-xs rounded-lg hover:bg-primary-hover">
-                        📑 Сформировать счёт на оплату
-                    </button>
-                </div>
-
-                {/* Комментарии */}
-                <div className="bg-white rounded-lg border border-slate-200 p-3">
-                    <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Комментарии</h3>
-                    <div className="space-y-2 mb-3">
-                        {mockComments.map(c => (
-                            <div key={c.id} className="bg-slate-50 rounded p-2">
-                                <div className="text-[10px] text-slate-500">{c.authorName} — {new Date(c.createdAt).toLocaleDateString()}</div>
-                                <div className="text-xs text-slate-700">{c.text}</div>
+                        {/* Обслуживание */}
+                        <div className="bg-white rounded-lg border border-slate-200 p-3">
+                            <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Обслуживание</h3>
+                            <div className="grid grid-cols-4 gap-3">
+                                <div>
+                                    <span className={labelClass}>Статус клиента</span>
+                                    <div className={`text-[10px] px-2 py-0.5 rounded-full inline-block ${client.status === 'permanent' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                        {client.status === 'permanent' ? 'Постоянный' : 'Разовый'}
+                                    </div>
+                                </div>
+                                <div><span className={labelClass}>Тариф</span><div className="text-sm font-bold text-primary">{client.tariff.name}</div></div>
+                                <div><span className={labelClass}>Бухгалтер</span><div className={valueClass}>{client.managerName}</div></div>
+                                {client.tariff.description && (
+                                    <div className="col-span-1">
+                                        <span className={labelClass}>Описание услуг</span>
+                                        <div className="text-[10px] text-slate-600">{client.tariff.description}</div>
+                                    </div>
+                                )}
                             </div>
-                        ))}
-                    </div>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={newComment}
-                            onChange={(e) => setNewComment(e.target.value)}
-                            placeholder="Добавить комментарий..."
-                            className={inputClass + " flex-1"}
-                        />
-                        <button className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary-hover">Добавить</button>
-                    </div>
-                </div>
+                        </div>
+
+                        {/* Доступы к сервисам */}
+                        <div className="bg-white rounded-lg border border-slate-200 p-3">
+                            <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">🔐 Доступы к сервисам</h3>
+                            <CredentialsSection credentials={client.credentials || []} />
+                        </div>
+
+                        {/* Документы */}
+                        <div className="bg-white rounded-lg border border-slate-200 p-3">
+                            <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Документы</h3>
+                            <DocumentUpload
+                                documents={mockDocs}
+                                onUpload={(f) => console.log('Upload:', f.name)}
+                                onDelete={(id) => console.log('Delete:', id)}
+                                onView={(doc) => console.log('View:', doc)}
+                                label="Загрузить документ"
+                            />
+                        </div>
+
+                        {/* Кнопка счёт */}
+                        <div className="flex gap-2">
+                            <button className="px-4 py-2 bg-primary text-white text-xs rounded-lg hover:bg-primary-hover">
+                                📑 Сформировать счёт на оплату
+                            </button>
+                        </div>
+
+                        {/* Комментарии */}
+                        <div className="bg-white rounded-lg border border-slate-200 p-3">
+                            <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Комментарии</h3>
+                            <div className="space-y-2 mb-3">
+                                {mockComments.map(c => (
+                                    <div key={c.id} className="bg-slate-50 rounded p-2">
+                                        <div className="text-[10px] text-slate-500">{c.authorName} — {new Date(c.createdAt).toLocaleDateString()}</div>
+                                        <div className="text-xs text-slate-700">{c.text}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newComment}
+                                    onChange={(e) => setNewComment(e.target.value)}
+                                    placeholder="Добавить комментарий..."
+                                    className={inputClass + " flex-1"}
+                                />
+                                <button className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary-hover">Добавить</button>
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Правая часть (30%) */}
@@ -667,13 +690,8 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
                 {/* Список задач */}
                 <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 overflow-y-auto">
                     <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Задачи клиента</h3>
-                    <div className="space-y-1">
-                        {['6-НДФЛ за Q1', 'УСН аванс Q1', 'Страховые взносы за март'].map((t, i) => (
-                            <div key={i} className="text-[10px] p-1.5 bg-slate-50 rounded border border-slate-100">
-                                <div className="font-medium text-slate-700">{t}</div>
-                                <div className="text-slate-400">Срок: {new Date().toLocaleDateString()}</div>
-                            </div>
-                        ))}
+                    <div className="space-y-1 text-[10px] text-slate-400 text-center py-4">
+                        Нет активных задач
                     </div>
                 </div>
 
@@ -681,12 +699,12 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
                 <div className="bg-white rounded-lg border border-slate-200 p-3">
                     <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Статистика</h3>
                     <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <div><span className="text-slate-500">Основные задачи:</span> <span className="font-medium">12</span></div>
-                        <div><span className="text-slate-500">Доп. задачи:</span> <span className="font-medium">3</span></div>
-                        <div><span className="text-slate-500">Обслуживание:</span> <span className="font-medium text-primary">{client.tariff.price.toLocaleString()} ₽</span></div>
+                        <div><span className="text-slate-500">Основные задачи:</span> <span className="font-medium">—</span></div>
+                        <div><span className="text-slate-500">Доп. задачи:</span> <span className="font-medium">—</span></div>
+                        <div><span className="text-slate-500">Обслуживание:</span> <span className="font-medium text-primary">{(client?.tariff?.price || 0).toLocaleString()} ₽</span></div>
                         <div>
                             <span className="text-slate-500">Задолженность:</span>
-                            <span className="font-medium text-green-600"> Нет</span>
+                            <span className="font-medium text-slate-400"> —</span>
                         </div>
                     </div>
                 </div>
@@ -702,8 +720,11 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
 const ClientManageTab: React.FC<{
     clients: Client[],
     legalEntities: LegalEntity[],
-    onSave: (entity: LegalEntity) => void
-}> = ({ clients, legalEntities, onSave }) => {
+    onSave: (entity: LegalEntity) => void,
+    onDelete: (entity: LegalEntity) => void,
+    onArchive?: (entity: LegalEntity) => void,
+    employees?: Employee[]
+}> = ({ clients, legalEntities, onSave, onDelete, onArchive, employees = [] }) => {
     const [selectedClientId, setSelectedClientId] = useState<string | null>(clients[0]?.id || null);
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [legalForm, setLegalForm] = useState<LegalForm>('ooo');
@@ -890,13 +911,12 @@ const ClientManageTab: React.FC<{
                 inn: formData.inn,
                 kpp: legalForm !== 'ip' ? formData.kpp : undefined,
                 ogrn: formData.ogrn,
-                // created/updated обрабатывает App.tsx или ставим текущее
-                createdAt: currentClient?.createdAt || new Date(),
+                createdAt: currentClient?.createdAt ? new Date(currentClient.createdAt) : new Date(),
 
                 legalAddress: formData.legalAddress,
                 actualAddress: formData.actualAddress || formData.legalAddress,
 
-                // Контакты: берем первый или собираем из полей
+                // Основной контакт (для обратной совместимости)
                 contactPerson: editContacts[0]?.name || 'Основной контакт',
                 phone: editContacts[0]?.phone || '',
                 email: editContacts[0]?.email || '',
@@ -905,9 +925,10 @@ const ClientManageTab: React.FC<{
                 isNdsPayer: isNdsPayer,
                 ndsValue: isNdsPayer ? ndsPercent : undefined,
                 hasEmployees: hasEmployees,
+                employeeCount: hasEmployees ? parseInt(employeesCount) || 0 : undefined,
 
                 // Массивы данных
-                notes: [], // Пока пустой, так как в форме нет поля заметок для LegalEntity
+                notes: [],
                 credentials: editCredentials.map(c => ({
                     id: c.id,
                     service: c.serviceName,
@@ -922,14 +943,38 @@ const ClientManageTab: React.FC<{
                     autoRenew: false
                 })) || [],
 
-                isArchived: false
+                isArchived: false,
+
+                // === НОВЫЕ ПОЛЯ ===
+
+                // Назначенный бухгалтер
+                accountantName: formData.accountant || undefined,
+
+                // Статус клиента
+                clientStatus: (formData.status as 'permanent' | 'onetime') || 'permanent',
+
+                // Тариф
+                tariffName: formData.tariff || 'Стандарт',
+                tariffPrice: formData.tariff === 'Базовый' ? 5000 : formData.tariff === 'Премиум' ? 35000 : 15000,
+
+                // Банковские реквизиты
+                bankName: formData.bankName || undefined,
+                bankAccount: formData.bankAccount || undefined,
+                bik: formData.bik || undefined,
+                corrAccount: formData.corrAccount || undefined,
+
+                // Расширенные контакты (до 4)
+                contacts: editContacts.slice(0, 4).map(c => ({
+                    id: c.id,
+                    role: c.role,
+                    name: c.name,
+                    phone: c.phone,
+                    email: c.email
+                })),
             };
 
             // 4. Вызываем реальный метод сохранения из App.tsx
-            // Важно: App.tsx ждет синхронного обновления или сам обновляет стейт
             onSave(entityToSave);
-
-            console.log('Клиент успешно сохранен:', entityToSave);
 
             setSaveModalType('success');
 
@@ -1220,12 +1265,25 @@ const ClientManageTab: React.FC<{
                                 </select>
                             </div>
                             <div>
-                                <label className={labelClass}>Бухгалтер</label>
-                                <select className={inputClass} value={formData.accountant} onChange={(e) => updateField('accountant', e.target.value)}>
-                                    <option value="">Выберите...</option>
-                                    <option value="Иванова М.">Иванова М.</option>
-                                    <option value="Петров А.">Петров А.</option>
-                                    <option value="Сидорова Е.">Сидорова Е.</option>
+                                <label className="block text-[10px] text-slate-500 mb-1">Бухгалтер</label>
+                                <select
+                                    className={inputClass}
+                                    value={formData.accountant}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, accountant: e.target.value }))}
+                                >
+                                    <option value="">Не назначен</option>
+                                    {employees
+                                        .filter(e => e.role === 'accountant' || e.role === 'admin')
+                                        .map(e => (
+                                            <option key={e.id} value={`${e.lastName} ${e.firstName}`}>
+                                                {e.lastName} {e.firstName}
+                                            </option>
+                                        ))
+                                    }
+                                    {/* Fallback for existing values not in list */}
+                                    {!employees.find(e => `${e.lastName} ${e.firstName}` === formData.accountant) && formData.accountant && (
+                                        <option value={formData.accountant}>{formData.accountant}</option>
+                                    )}
                                 </select>
                             </div>
                         </div>
@@ -1621,7 +1679,15 @@ const ClientManageTab: React.FC<{
 // ОСНОВНОЙ КОМПОНЕНТ
 // ============================================
 
-export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave, onDelete, onArchive }) => {
+interface ClientsViewProps {
+    legalEntities: LegalEntity[];
+    onSave: (entity: LegalEntity) => void;
+    onDelete: (entity: LegalEntity) => void;
+    onArchive?: (entity: LegalEntity) => void;
+    employees?: Employee[];
+}
+
+export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave, onDelete, onArchive, employees = [] }) => {
     const [activeTab, setActiveTab] = useState<ClientTab>('list');
     const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
@@ -1663,7 +1729,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
                 {activeTab === 'list' && <ClientListTab clients={clients} onSelectClient={handleSelectClient} />}
                 {activeTab === 'details' && <ClientDetailsTab clients={clients} clientId={selectedClientId} />}
-                {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={onSave} />}
+                {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={onSave} onDelete={onDelete} employees={employees} />}
             </div>
         </div>
     );
