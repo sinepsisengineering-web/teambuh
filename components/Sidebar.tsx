@@ -20,8 +20,8 @@ const NavItem: React.FC<{
         <button
             onClick={onClick}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${isActive
-                    ? 'bg-sidebar-active text-white shadow-md'
-                    : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
+                ? 'bg-sidebar-active text-white shadow-md'
+                : 'text-sidebar-text hover:bg-sidebar-hover hover:text-white'
                 }`}
         >
             {children}
@@ -62,12 +62,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) =
                 </NavItem>
                 <NavItem label="Клиенты" view="clients" activeView={activeView} onClick={() => setActiveView('clients')}>
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                     </svg>
                 </NavItem>
                 <NavItem label="Персонал" view="staff" activeView={activeView} onClick={() => setActiveView('staff')}>
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                 </NavItem>
                 <NavItem label="Архив" view="archive" activeView={activeView} onClick={() => setActiveView('archive')}>

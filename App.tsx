@@ -9,7 +9,7 @@ import { ClientForm } from './components/ClientForm';
 import { ClientDetailCard } from './components/ClientDetailCard';
 import { TaskForm } from './components/TaskForm';
 import { TaskDetailModal } from './components/TaskDetailModal';
-import { TasksListView } from './components/TasksListView';
+import { TasksView } from './components/TasksView';
 import { ArchiveView } from './components/ArchiveView';
 import { SettingsView } from './components/SettingsView';
 import { DashboardView } from './components/DashboardView';
@@ -79,6 +79,10 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
     useEffect(() => {
         const loadData = async () => {
             try {
+                // Инициализируем календарные данные (выходные/праздники)
+                const { initializeDateRegistry } = await import('./services/dateRegistry');
+                initializeDateRegistry();
+
                 const [loadedClients, loadedEmployees] = await Promise.all([
                     storage.loadAllClients(),
                     storage.loadAllEmployees()
@@ -104,6 +108,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
     const [activeView, setActiveView] = useState<View>('calendar');
     const [isLegalEntityModalOpen, setIsLegalEntityModalOpen] = useState(false);
     const [legalEntityToEdit, setLegalEntityToEdit] = useState<LegalEntity | null>(null);
+    const [navigateToClientId, setNavigateToClientId] = useState<string | null>(null); // Для перехода в ClientsView
 
     // Инициализация сервиса праздников при запуске приложения
     useEffect(() => {
@@ -254,27 +259,40 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
 
     // --- Handlers for Employees ---
 
-    const handleSaveEmployee = (employee: Employee) => {
-        setEmployees(prev => {
-            const exists = prev.find(e => e.id === employee.id);
-            if (exists) {
-                return prev.map(e => e.id === employee.id ? employee : e);
-            }
-            return [...prev, employee];
-        });
+    const handleSaveEmployee = async (employee: Employee) => {
+        try {
+            // Сохраняем через сервер API
+            const savedEmployee = await storage.saveEmployee(employee);
+
+            setEmployees(prev => {
+                const exists = prev.find(e => e.id === savedEmployee.id);
+                if (exists) {
+                    return prev.map(e => e.id === savedEmployee.id ? savedEmployee : e);
+                }
+                return [...prev, savedEmployee];
+            });
+        } catch (error) {
+            console.error('Failed to save employee:', error);
+        }
     };
 
-    const handleDeleteEmployee = (employee: Employee) => {
-        confirm({
+    const handleDeleteEmployee = async (employee: Employee) => {
+        const confirmed = await confirm({
             title: 'Удаление сотрудника',
-            message: `Вы уверены, что хотите удалить сотрудника "${employee.lastName} ${employee.firstName}"?`,
-            confirmText: 'Удалить',
-            cancelText: 'Отмена',
-            type: 'danger',
-            onConfirm: () => {
-                setEmployees(prev => prev.filter(e => e.id !== employee.id));
-            }
+            message: `Вы уверены, что хотите удалить сотрудника "${employee.lastName || ''} ${employee.firstName || ''}"?`,
+            confirmButtonText: 'Удалить',
+            confirmButtonClass: 'bg-red-500 hover:bg-red-600 text-white'
         });
+
+        if (confirmed) {
+            try {
+                await storage.deleteEmployee(employee.id);
+                setEmployees(prev => prev.filter(e => e.id !== employee.id));
+                console.log('[Employee] Deleted:', employee.id);
+            } catch (error) {
+                console.error('Failed to delete employee:', error);
+            }
+        }
     }; const handleOpenLegalEntityForm = (entity: LegalEntity | null = null) => {
         setLegalEntityToEdit(entity ? { ...entity } : null);
         setIsLegalEntityModalOpen(true);
@@ -304,19 +322,34 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
             case 'dashboard': return <DashboardView />;
             case 'calendar': return <Calendar tasks={tasks} legalEntities={activeLegalEntities} onUpdateTaskStatus={() => { }} onAddTask={(date) => handleOpenNewTaskForm({ dueDate: date })} onOpenDetail={handleOpenTaskDetail} onDeleteTask={handleDeleteTask} />;
             case 'tasks':
-                const addTaskButton = (<button onClick={() => handleOpenNewTaskForm()} className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-hover transition-colors shadow-glow" > <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg> Добавить задачу </button>);
-                return <TasksListView key={tasksViewKey} tasks={tasks} legalEntities={activeLegalEntities} onOpenDetail={handleOpenTaskDetail} onBulkUpdate={handleBulkComplete} onBulkDelete={handleBulkDelete} onDeleteTask={handleDeleteTask} customAddTaskButton={addTaskButton} />;
-            case 'clients': return <ClientsView
-                legalEntities={activeLegalEntities}
-                onSave={handleSaveLegalEntity}
-                onDelete={handleDeleteLegalEntity}
-                onArchive={handleArchiveLegalEntity}
-                employees={employees}
-            />;
+                return <TasksView
+                    tasks={tasks}
+                    legalEntities={activeLegalEntities}
+                    employees={employees}
+                    onToggleComplete={(taskId) => handleToggleComplete(taskId)}
+                    onDeleteTask={(taskId) => handleDeleteTask(taskId)}
+                    onNavigateToClient={(clientId) => {
+                        // Переход на страницу Клиенты → Детализация
+                        setNavigateToClientId(clientId);
+                        setActiveView('clients');
+                    }}
+                />;
+            case 'clients':
+                return <ClientsView
+                    key={navigateToClientId || 'no-init'}
+                    legalEntities={activeLegalEntities}
+                    onSave={handleSaveLegalEntity}
+                    onDelete={handleDeleteLegalEntity}
+                    onArchive={handleArchiveLegalEntity}
+                    employees={employees}
+                    initialClientId={navigateToClientId || undefined}
+                />;
             case 'staff': return <StaffView
                 employees={employees}
+                legalEntities={activeLegalEntities}
                 onSave={handleSaveEmployee}
                 onDelete={handleDeleteEmployee}
+                confirm={confirm}
             />;
             case 'archive': return <ArchiveView archivedLegalEntities={archivedLegalEntities} onUnarchive={handleUnarchiveLegalEntity} onDelete={() => { }} />;
             case 'settings': return <SettingsView />;

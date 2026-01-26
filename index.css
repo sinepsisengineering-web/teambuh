@@ -72,8 +72,30 @@
 
   /* === СОСТОЯНИЯ === */
   --color-error: #ef4444;
+  --color-error-hover: #dc2626;
+  --color-error-bg: rgba(239, 68, 68, 0.1);
   --color-success: #22c55e;
+  --color-success-hover: #16a34a;
   --color-warning: #f59e0b;
+  --color-warning-hover: #d97706;
+
+  /* === ФОНЫ === */
+  --color-bg-muted: #f8fafc;
+  --color-bg-overlay: rgba(0, 0, 0, 0.8);
+  --color-bg-modal-overlay: rgba(0, 0, 0, 0.5);
+
+  /* === ТЕМА: ДОГОВОРЫ (зелёная) === */
+  --color-contract: #22c55e;
+  --color-contract-dark: #16a34a;
+  --color-contract-bg: #f0fdf4;
+  --color-contract-border: #bbf7d0;
+  --color-contract-text: #166534;
+
+  /* === ТЕМА: ДОКУМЕНТЫ (янтарная) === */
+  --color-doc-empty: #f59e0b;
+  --color-doc-empty-bg: #fffbeb;
+  --color-doc-empty-border: #fde68a;
+  --color-doc-empty-text: #92400e;
 
   /* === РАЗМЕРЫ === */
   --sidebar-width: 256px;

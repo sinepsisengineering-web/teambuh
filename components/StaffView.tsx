@@ -2,20 +2,30 @@
 // Раздел «Персонал» с тремя вкладками: Список, Детализация, Управление
 
 import React, { useState } from 'react';
-import { isWeekend } from '../utils/dateUtils';
-import { isHoliday } from '../services/holidayService';
-import { DocumentUpload } from './DocumentUpload';
+import { ServerDocumentUpload } from './ServerDocumentUpload';
 import { MiniCalendar } from './MiniCalendar';
+import { Input, Select, Label, FormSection, PhoneInput, EmailInput, INNInput, PercentInput, SNILSInput, PassportInput, BankAccountInput, BIKInput, CorrAccountInput, CardNumberInput, SalaryInput } from './FormComponents';
+import { EmployeeAvatar } from './EmployeeAvatar';
+
+const SERVER_URL = 'http://localhost:3001';
 
 type StaffTab = 'list' | 'details' | 'manage';
 
 // ============================================
 // Вкладка А: СПИСОК (сетка карточек сотрудников)
 // ============================================
-import { Employee, EmploymentType, UploadedDocument } from '../types';
+import { Employee, EmploymentType, LegalEntity } from '../types';
 
-const StaffListTab: React.FC<{ employees: Employee[], onSelectEmployee: (id: string) => void }> = ({ employees, onSelectEmployee }) => {
+const StaffListTab: React.FC<{ employees: Employee[], legalEntities: LegalEntity[], onSelectEmployee: (id: string) => void }> = ({ employees, legalEntities, onSelectEmployee }) => {
     const [sortBy, setSortBy] = useState<'alpha' | 'load-asc' | 'load-desc'>('alpha');
+
+    // Считаем кол-во клиентов для каждого сотрудника
+    const clientCountMap = new Map<string, number>();
+    legalEntities.forEach(le => {
+        if (le.accountantId) {
+            clientCountMap.set(le.accountantId, (clientCountMap.get(le.accountantId) || 0) + 1);
+        }
+    });
 
     const getLoadColor = (load: number) => {
         if (load >= 90) return 'text-red-500';
@@ -49,18 +59,20 @@ const StaffListTab: React.FC<{ employees: Employee[], onSelectEmployee: (id: str
                     >
                         {/* Аватар + ФИО */}
                         <div className="flex items-center gap-3 mb-4">
-                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-lg">
-                                {emp.lastName.charAt(0)}
-                            </div>
+                            <EmployeeAvatar
+                                employeeId={emp.id}
+                                name={`${emp.lastName || ''} ${emp.firstName || ''}`}
+                                size="sm"
+                            />
                             <div>
-                                <div className="font-semibold text-slate-800">{emp.lastName} {emp.firstName}</div>
+                                <div className="font-semibold text-slate-800">{emp.lastName || 'Без фамилии'} {emp.firstName || ''}</div>
                                 <div className="text-sm text-slate-500">{emp.role === 'accountant' ? 'Бухгалтер' : emp.role === 'admin' ? 'Администратор' : 'Помощник'}</div>
                             </div>
                         </div>
 
                         {/* Метрики */}
                         <div className="flex justify-between text-sm text-slate-600 mb-3">
-                            <span>Клиентов: <b>0</b></span>
+                            <span>Клиентов: <b>{clientCountMap.get(emp.id) || 0}</b></span>
                             <span>Задач: <b>0</b></span>
                         </div>
 
@@ -83,19 +95,11 @@ const StaffListTab: React.FC<{ employees: Employee[], onSelectEmployee: (id: str
 // ============================================
 // Используем глобальный MiniCalendar из ./MiniCalendar.tsx
 
-const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | null }> = ({ employees, employeeId }) => {
+const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | null, legalEntities: LegalEntity[] }> = ({ employees, employeeId, legalEntities }) => {
     const [selectedEmployee, setSelectedEmployee] = useState(employeeId || (employees.length > 0 ? employees[0].id : ''));
 
-    const clients = [
-        'ООО "Рога и Копыта"',
-        'ИП Иванов А.А.',
-        'ООО "Звезда"',
-        'ИП Петров Б.Б.',
-        'ООО "Альфа"',
-        'ИП Сидорова В.В.',
-        'ООО "Бета Групп"',
-        'ИП Козлов Г.Г.',
-    ];
+    // Фильтруем клиентов, привязанных к выбранному сотруднику
+    const linkedClients = legalEntities.filter(le => le.accountantId === selectedEmployee);
 
     return (
         <div className="h-full flex flex-col">
@@ -122,49 +126,12 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
             <div className="flex gap-4 flex-1 min-h-0">
                 {/* Левая колонка — Задачи (70%) */}
                 <div className="w-[70%] flex flex-col gap-3 overflow-y-auto">
-                    {/* Критично */}
-                    <div className="bg-red-50 rounded-lg p-3 border border-red-200">
-                        <h3 className="text-red-600 font-medium text-sm mb-2 flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                            Критично
-                        </h3>
-                        <div className="space-y-1.5">
-                            <div className="bg-white rounded-md p-2 border border-red-100 text-xs">
-                                <div className="font-medium text-slate-800">Сдать НДС — ООО "Рога и Копыта"</div>
-                                <div className="text-red-500 mt-0.5">Просрочено на 2 дня</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* В работе */}
-                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                        <h3 className="text-blue-600 font-medium text-sm mb-2 flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                            В работе
-                        </h3>
-                        <div className="space-y-1.5">
-                            <div className="bg-white rounded-md p-2 border border-blue-100 text-xs">
-                                <div className="font-medium text-slate-800">Подготовить баланс — ИП Иванов</div>
-                                <div className="text-slate-500 mt-0.5">До 25 января</div>
-                            </div>
-                            <div className="bg-white rounded-md p-2 border border-blue-100 text-xs">
-                                <div className="font-medium text-slate-800">Ответ в ФНС — ООО "Звезда"</div>
-                                <div className="text-slate-500 mt-0.5">До 28 января</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* В планах */}
-                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                        <h3 className="text-slate-600 font-medium text-sm mb-2 flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                            В планах
-                        </h3>
-                        <div className="space-y-1.5">
-                            <div className="bg-white rounded-md p-2 border border-slate-100 text-xs">
-                                <div className="font-medium text-slate-800">Страховые взносы — все клиенты</div>
-                                <div className="text-slate-500 mt-0.5">До 15 февраля</div>
-                            </div>
+                    {/* TODO: Здесь будут реальные задачи сотрудника, фильтрованные по assigneeId */}
+                    <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+                        <div className="text-center py-8">
+                            <div className="text-3xl mb-2">📋</div>
+                            <div>Задачи сотрудника</div>
+                            <div className="text-xs mt-1">(будут загружены из системы задач)</div>
                         </div>
                     </div>
                 </div>
@@ -176,41 +143,102 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
                         <MiniCalendar />
                     </div>
 
-                    {/* Клиенты (заполняет оставшееся пространство) */}
-                    <div className="flex-1 min-h-0 bg-white rounded-lg border border-slate-200 p-2 flex flex-col">
-                        <h4 className="font-medium text-slate-700 mb-1 flex-shrink-0">Клиенты</h4>
-                        <div className="flex-1 overflow-y-auto">
-                            <ul className="space-y-0.5 text-slate-600">
-                                {clients.map((client, i) => (
-                                    <li key={i} className="py-0.5 hover:text-primary cursor-pointer truncate">• {client}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    </div>
+                    {/* Профиль сотрудника + Клиенты */}
+                    {(() => {
+                        const emp = employees.find(e => e.id === selectedEmployee);
+                        return (
+                            <div className="flex-1 min-h-0 bg-white rounded-lg border border-slate-200 flex flex-col overflow-hidden">
+                                {/* Sticky-заголовок с профилем сотрудника */}
+                                <div className="flex-shrink-0 p-3 border-b border-slate-100 flex items-center gap-3">
+                                    {/* ФИО и роль слева */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-semibold text-slate-800 text-sm truncate">
+                                            {emp?.lastName || 'Сотрудник'} {emp?.firstName || ''}
+                                        </div>
+                                        <div className="text-xs text-slate-500">
+                                            {emp?.role === 'accountant' ? 'Бухгалтер' : emp?.role === 'admin' ? 'Администратор' : 'Помощник'}
+                                        </div>
+                                    </div>
+                                    {/* Аватар справа */}
+                                    <EmployeeAvatar
+                                        employeeId={emp?.id}
+                                        name={`${emp?.lastName || ''} ${emp?.firstName || ''}`}
+                                        size="md"
+                                    />
+                                </div>
 
-                    {/* Статистика (fixed) */}
-                    <div className="flex-shrink-0 bg-white rounded-lg border border-slate-200 p-2">
-                        <h4 className="font-medium text-slate-700 mb-1">Статистика</h4>
-                        <div className="flex justify-between text-slate-600">
-                            <span>Клиентов: <b>12</b></span>
-                            <span>Задач: <b>34</b></span>
-                            <span className="text-green-600">✓ 28</span>
-                            <span className="text-orange-500">⏳ 6</span>
-                        </div>
-                    </div>
+                                {/* Прокручиваемый список клиентов */}
+                                <div className="flex-1 overflow-y-auto p-2">
+                                    <h4 className="font-medium text-slate-700 text-xs mb-2">Клиенты ({linkedClients.length})</h4>
+                                    {linkedClients.length === 0 ? (
+                                        <div className="text-slate-400 text-xs text-center py-4">
+                                            Нет привязанных клиентов
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-1">
+                                            {linkedClients.map(client => (
+                                                <div
+                                                    key={client.id}
+                                                    className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors"
+                                                >
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-xs font-medium text-slate-800 truncate">{client.name}</div>
+                                                        <div className="text-[10px] text-slate-400">ИНН: {client.inn}</div>
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-500">
+                                                        {client.legalForm}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
-                    {/* Финансы (fixed) */}
-                    <div className="flex-shrink-0 bg-white rounded-lg border border-slate-200 p-2">
-                        <h4 className="font-medium text-slate-700 mb-1 flex items-center justify-between">
-                            Финансы
-                            <span className="text-primary font-bold">30%</span>
-                        </h4>
-                        <div className="flex justify-between text-slate-600">
-                            <span>Приход: <b>145 000₽</b></span>
-                            <span className="text-green-600">ЗП: 43 500₽</span>
-                            <button className="text-primary hover:underline">+Премия</button>
-                        </div>
-                    </div>
+                    {/* Статистика и Финансы - рассчитываем динамически */}
+                    {(() => {
+                        const emp = employees.find(e => e.id === selectedEmployee);
+                        // Базовый тариф 7000₽, если не указан
+                        const DEFAULT_TARIFF = 7000;
+                        // Сумма тарифов всех привязанных клиентов
+                        const totalIncome = linkedClients.reduce((sum, client) => {
+                            return sum + (client.tariffPrice || DEFAULT_TARIFF);
+                        }, 0);
+                        // Процент сотрудника (из данных сотрудника, парсим строку в число)
+                        const employeePercent = parseFloat(emp?.percent || '0') || 0;
+                        // ЗП = доход × процент / 100
+                        const salary = Math.round(totalIncome * employeePercent / 100);
+
+                        return (
+                            <>
+                                {/* Статистика */}
+                                <div className="flex-shrink-0 bg-white rounded-lg border border-slate-200 p-2">
+                                    <h4 className="font-medium text-slate-700 mb-1">Статистика</h4>
+                                    <div className="flex justify-between text-slate-600">
+                                        <span>Клиентов: <b>{linkedClients.length}</b></span>
+                                        <span>Задач: <b className="text-slate-400">—</b></span>
+                                        <span className="text-green-600">✓ <span className="text-slate-400">—</span></span>
+                                        <span className="text-orange-500">⏳ <span className="text-slate-400">—</span></span>
+                                    </div>
+                                </div>
+
+                                {/* Финансы */}
+                                <div className="flex-shrink-0 bg-white rounded-lg border border-slate-200 p-2">
+                                    <h4 className="font-medium text-slate-700 mb-1 flex items-center justify-between">
+                                        Финансы
+                                        <span className="text-primary font-bold">{employeePercent}%</span>
+                                    </h4>
+                                    <div className="flex justify-between text-slate-600">
+                                        <span>Приход: <b>{totalIncome.toLocaleString()}₽</b></span>
+                                        <span className="text-green-600">ЗП: {salary.toLocaleString()}₽</span>
+                                        <button className="text-primary hover:underline">+Премия</button>
+                                    </div>
+                                </div>
+                            </>
+                        );
+                    })()}
                 </div>
             </div>
         </div>
@@ -229,9 +257,10 @@ interface StaffManageTabProps {
     employees: Employee[];
     onSave: (emp: Employee) => void;
     onDelete: (emp: Employee) => void;
+    confirm?: (options: { title: string; message: string; confirmButtonText?: string }) => Promise<boolean>;
 }
 
-const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDelete }) => {
+const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDelete, confirm }) => {
     const [selectedEmployee, setSelectedEmployee] = useState<string | null>(employees.length > 0 ? employees[0].id : null);
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('staff');
@@ -272,182 +301,552 @@ const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDe
         }
     }, [selectedEmployee, isAddingNew, currentEmployee, newEmploymentType]);
 
-    const handleSelectEmployee = (id: string) => { setSelectedEmployee(id); setIsAddingNew(false); };
-    const handleAddNew = () => { setIsAddingNew(true); setSelectedEmployee(null); setNewEmploymentType('staff'); };
+    // Уведомление о сохранении
+    const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-    const handleSaveClick = () => {
-        // Collect data (in a real app we'd use form state for everything)
-        // For now, let's assume formData is updated or just pass back what we have + type changes.
-        // Since I can't easily rewrite all inputs to controlled in one go without making the file huge diff,
-        // I will trust the user to fill the form and I'll just save the `formData` which needs to be updated by inputs.
-        // IMPORTANT: The original code provided NO mechanism to update values (just defaultValues).
-        // I MUST make inputs controlled or use refs to support saving. 
-        // I will use `onChange` to update `formData`.
+    // Модальное окно сохранения (аналогично ClientsView)
+    const [showSaveModal, setShowSaveModal] = useState(false);
+    const [saveModalType, setSaveModalType] = useState<'confirm' | 'success' | 'error'>('confirm');
+    const [isSaving, setIsSaving] = useState(false);
 
-        if (formData.lastName) {
-            onSave(formData as Employee);
-            setIsAddingNew(false);
-            if (formData.id) setSelectedEmployee(formData.id);
+    const handleSelectEmployee = (id: string) => { setSelectedEmployee(id); setIsAddingNew(false); setSaveMessage(null); };
+    const handleAddNew = () => { setIsAddingNew(true); setSelectedEmployee(null); setNewEmploymentType('staff'); setErrors({}); setSaveMessage(null); };
+
+    const handleSaveClick = async () => {
+        // Валидация обязательных полей
+        if (!validateForm()) {
+            setSaveModalType('error');
+            setShowSaveModal(true);
+            return;
         }
+
+        // Показываем модальное окно подтверждения
+        if (isExisting) {
+            setSaveModalType('confirm');
+            setShowSaveModal(true);
+        } else {
+            // Для нового сотрудника — сразу сохраняем
+            performSave();
+        }
+    };
+
+    const performSave = async () => {
+        setIsSaving(true);
+        try {
+            await onSave(formData as Employee);
+
+            setSaveModalType('success');
+            // Автоматически закрываем окно успеха через 1.5 сек
+            setTimeout(() => {
+                setShowSaveModal(false);
+                setIsAddingNew(false);
+                setErrors({});
+                if (formData.id) setSelectedEmployee(formData.id);
+            }, 1500);
+        } catch (error) {
+            console.error('Save error:', error);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleConfirmSave = () => {
+        performSave();
     };
 
     const updateField = (field: keyof Employee, value: any) => {
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
-    const handleUploadDocument = (file: File) => console.log('Upload:', file.name);
-    const handleDeleteDocument = (docId: string) => console.log('Delete:', docId);
-    const handleViewDocument = (doc: UploadedDocument) => { console.log('View:', doc.name); window.open('#', '_blank'); };
+    // Валидация обязательных полей
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const validateForm = (): boolean => {
+        const newErrors: Record<string, string> = {};
 
-    const inputClass = "w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-primary/30";
-    const inputReadonlyClass = "w-full px-2 py-1 text-xs border border-slate-100 rounded bg-slate-50 text-slate-500";
-    const labelClass = "block text-[10px] text-slate-500 mb-0.5";
+        // Личные данные
+        if (!formData.lastName?.trim()) newErrors.lastName = 'Обязательное поле';
+        if (!formData.firstName?.trim()) newErrors.firstName = 'Обязательное поле';
+        if (!formData.email?.trim()) newErrors.email = 'Обязательное поле';
+        if (!formData.phone?.trim()) newErrors.phone = 'Обязательное поле';
 
-    if (!currentEmployee && !isAddingNew) return <div className="p-4">Нет сотрудников</div>;
+        // Документы
+        if (!formData.hireDate) newErrors.hireDate = 'Обязательное поле';
 
-    // Helper for inputs
-    const Input = ({ field, type = "text", readOnly = false }: { field: keyof Employee, type?: string, readOnly?: boolean }) => (
-        <input
-            type={type}
-            className={readOnly ? inputReadonlyClass : inputClass}
-            value={(formData as any)[field] || ''}
-            onChange={e => updateField(field, e.target.value)}
-            readOnly={readOnly}
-        />
-    );
+        // Финансы
+        if (!formData.percent && formData.percent !== '0') newErrors.percent = 'Обязательное поле';
+
+        // Доступы
+        if (!formData.role) newErrors.role = 'Выберите роль';
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+
+
+    // Если нет сотрудников и не в режиме добавления — показываем кнопку добавления
+    if (!currentEmployee && !isAddingNew) {
+        return (
+            <div className="h-full flex gap-4">
+                {/* Левая колонка — пустое состояние */}
+                <div className="w-[70%] h-full flex items-center justify-center">
+                    <div className="text-center">
+                        <svg className="w-16 h-16 mx-auto mb-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        <h3 className="text-lg font-medium text-slate-600 mb-2">Нет сотрудников</h3>
+                        <p className="text-sm text-slate-400 mb-4">Добавьте первого сотрудника</p>
+                        <button
+                            onClick={handleAddNew}
+                            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors flex items-center gap-2 mx-auto"
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Добавить сотрудника
+                        </button>
+                    </div>
+                </div>
+                {/* Правая колонка — пустая */}
+                <div className="w-[30%] flex flex-col">
+                    <div className="bg-white rounded-lg border border-slate-200 flex-1 flex items-center justify-center text-slate-400 text-sm">
+                        Список пуст
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div className="h-full flex gap-4">
-            {/* Левая колонка — Форма (70%) */}
-            <div className="w-[70%] h-full overflow-y-auto">
-                <div className="bg-white rounded-lg border border-slate-200 p-3 space-y-3 text-xs h-full">
+        <>
+            <div className="h-full flex gap-4">
+                {/* Левая колонка — Форма (70%) */}
+                <div className="w-[70%] h-full overflow-y-auto">
+                    <div className="bg-white rounded-lg border border-slate-200 p-3 space-y-3 text-xs h-full">
 
-                    {/* ТИП ОТНОШЕНИЙ */}
-                    <div className="bg-primary/5 rounded-lg p-2 border border-primary/20">
-                        <label className="block text-[10px] font-medium text-slate-700 mb-1.5">Тип отношений</label>
-                        {isExisting ? (
-                            <div className="py-1 px-2 bg-white rounded border border-slate-200 text-xs font-medium text-slate-700">
-                                {empType === 'staff' ? '👔 Штатный сотрудник' : empType === 'selfemployed' ? '📱 Самозанятый' : '🏢 ИП'}
-                            </div>
-                        ) : (
-                            <div className="flex gap-1">
-                                {[{ value: 'staff', label: '👔 Штат' }, { value: 'selfemployed', label: '📱 СЗ' }, { value: 'ip', label: '🏢 ИП' }].map(opt => (
-                                    <button key={opt.value} onClick={() => { setNewEmploymentType(opt.value as EmploymentType); updateField('employmentType', opt.value); }}
-                                        className={`flex-1 py-1 rounded text-[10px] font-medium transition-colors ${newEmploymentType === opt.value ? 'bg-primary text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
-                                        {opt.label}
-                                    </button>
-                                ))}
+                        {/* Уведомление о сохранении */}
+                        {saveMessage && (
+                            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2 animate-pulse">
+                                {saveMessage}
                             </div>
                         )}
-                    </div>
 
-                    {/* ЛИЧНЫЕ ДАННЫЕ */}
-                    <div>
-                        <h3 className="text-xs font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Личные данные</h3>
-                        <div className="flex gap-4">
-                            {/* Фото */}
-                            <div className="flex-shrink-0">
-                                <div className="w-20 h-24 bg-slate-100 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors">
-                                    <div className="text-center">
-                                        <svg className="w-6 h-6 mx-auto text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                        </svg>
-                                        <span className="text-[9px] text-slate-400 mt-1 block">Фото</span>
+                        {/* ТИП ОТНОШЕНИЙ */}
+                        <div className="bg-primary/5 rounded-lg p-2 border border-primary/20">
+                            <label className="block text-[10px] font-medium text-slate-700 mb-1.5">Тип отношений</label>
+                            {isExisting ? (
+                                <div className="py-1 px-2 bg-white rounded border border-slate-200 text-xs font-medium text-slate-700">
+                                    {empType === 'staff' ? '👔 Штатный сотрудник' : empType === 'selfemployed' ? '📱 Самозанятый' : '🏢 ИП'}
+                                </div>
+                            ) : (
+                                <div className="flex gap-1">
+                                    {[{ value: 'staff', label: '👔 Штат' }, { value: 'selfemployed', label: '📱 СЗ' }, { value: 'ip', label: '🏢 ИП' }].map(opt => (
+                                        <button key={opt.value} onClick={() => { setNewEmploymentType(opt.value as EmploymentType); updateField('employmentType', opt.value); }}
+                                            className={`flex-1 py-1 rounded text-[10px] font-medium transition-colors ${newEmploymentType === opt.value ? 'bg-primary text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ЛИЧНЫЕ ДАННЫЕ */}
+                        <FormSection title="Личные данные">
+                            <div className="flex gap-4">
+                                {/* Фото */}
+                                <EmployeeAvatar
+                                    employeeId={formData.id}
+                                    name={`${formData.lastName || ''} ${formData.firstName || ''}`}
+                                    size="lg"
+                                    editable={true}
+                                />
+                                {/* Поля ФИО */}
+                                <div className="flex-1 grid grid-cols-3 gap-3">
+                                    <div>
+                                        <Label required>Фамилия</Label>
+                                        <Input
+                                            value={formData.lastName || ''}
+                                            onChange={(v) => updateField('lastName', v)}
+                                            error={errors.lastName}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label required>Имя</Label>
+                                        <Input
+                                            value={formData.firstName || ''}
+                                            onChange={(v) => updateField('firstName', v)}
+                                            error={errors.firstName}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>Отчество</Label>
+                                        <Input
+                                            value={formData.middleName || ''}
+                                            onChange={(v) => updateField('middleName', v)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label required>Email (логин)</Label>
+                                        <EmailInput
+                                            value={formData.email || ''}
+                                            onChange={(v) => updateField('email', v)}
+                                            error={errors.email}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label required>Телефон</Label>
+                                        <PhoneInput
+                                            value={formData.phone || ''}
+                                            onChange={(v) => updateField('phone', v)}
+                                            error={errors.phone}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>Пароль</Label>
+                                        <button className="w-full px-3 py-2 bg-[var(--color-bg-muted)] text-[var(--color-text-secondary)] rounded-lg text-sm hover:bg-slate-200 transition-colors">
+                                            Сбросить
+                                        </button>
                                     </div>
                                 </div>
                             </div>
-                            {/* Поля ФИО */}
-                            <div className="flex-1 grid grid-cols-3 gap-2">
-                                <div><label className={labelClass}>Фамилия</label><Input field="lastName" /></div>
-                                <div><label className={labelClass}>Имя</label><Input field="firstName" /></div>
-                                <div><label className={labelClass}>Отчество</label><Input field="middleName" /></div>
-                                <div><label className={labelClass}>Email (логин)</label><Input field="email" type="email" /></div>
-                                <div><label className={labelClass}>Телефон</label><Input field="phone" type="tel" /></div>
+                        </FormSection>
+                        {/* ДОКУМЕНТЫ */}
+                        <FormSection title="Документы">
+                            <div className="grid grid-cols-4 gap-3 mb-3">
                                 <div>
-                                    <label className={labelClass}>Пароль</label>
-                                    <button className="w-full px-2 py-1 bg-slate-100 text-slate-600 rounded text-[10px] hover:bg-slate-200">Сбросить</button>
+                                    <Label required>{empType === 'staff' ? 'Дата приёма' : 'Начало'}</Label>
+                                    <Input
+                                        type="date"
+                                        value={formData.hireDate || ''}
+                                        onChange={(v) => updateField('hireDate', v)}
+                                        error={errors.hireDate}
+                                        readOnly={isExisting}
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <Label>ИНН</Label>
+                                    <INNInput
+                                        value={formData.inn || ''}
+                                        onChange={(v) => updateField('inn', v)}
+                                        length={empType === 'ip' ? 12 : 10}
+                                    />
+                                </div>
+                                {empType === 'staff' && (<>
+                                    <div>
+                                        <Label>Паспорт</Label>
+                                        <PassportInput
+                                            value={formData.passport || ''}
+                                            onChange={(v) => updateField('passport', v)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>СНИЛС</Label>
+                                        <SNILSInput
+                                            value={formData.snils || ''}
+                                            onChange={(v) => updateField('snils', v)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>Тип работы</Label>
+                                        <Select
+                                            value={formData.workType || 'office'}
+                                            onChange={(v) => updateField('workType', v)}
+                                            options={[
+                                                { value: 'office', label: 'В офисе' },
+                                                { value: 'remote', label: 'Удалённо' }
+                                            ]}
+                                        />
+                                    </div>
+                                </>)}
+                                {empType === 'ip' && (
+                                    <div>
+                                        <Label>ОГРНИП</Label>
+                                        <Input
+                                            value={formData.ogrnip || ''}
+                                            onChange={(v) => updateField('ogrnip', v)}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                            {/* Документы сотрудника — серверное хранение */}
+                            {formData.id && (
+                                <ServerDocumentUpload
+                                    entityType="employees"
+                                    entityId={formData.id}
+                                />
+                            )}
+                            {!formData.id && (
+                                <div className="text-sm text-[var(--color-text-muted)] italic p-3 bg-[var(--color-bg-muted)] rounded-lg border border-dashed border-[var(--color-border)]">
+                                    💡 Сохраните сотрудника, чтобы добавить документы
+                                </div>
+                            )}
+                        </FormSection>
+
+                        {/* ФИНАНСЫ */}
+                        <FormSection title="Финансы">
+                            <div className="grid grid-cols-4 gap-3">
+                                <div>
+                                    <Label>Банк</Label>
+                                    <Input
+                                        value={formData.bankName || ''}
+                                        onChange={(v) => updateField('bankName', v)}
+                                        placeholder="Сбербанк"
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Р/с</Label>
+                                    <BankAccountInput
+                                        value={formData.bankAccount || ''}
+                                        onChange={(v) => updateField('bankAccount', v)}
+                                    />
+                                </div>
+                                {(empType === 'staff' || empType === 'selfemployed') && (
+                                    <div>
+                                        <Label>№ карты</Label>
+                                        <CardNumberInput
+                                            value={formData.cardNumber || ''}
+                                            onChange={(v) => updateField('cardNumber', v)}
+                                        />
+                                    </div>
+                                )}
+                                {empType === 'ip' && (<>
+                                    <div>
+                                        <Label>БИК</Label>
+                                        <BIKInput
+                                            value={formData.bik || ''}
+                                            onChange={(v) => updateField('bik', v)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>Корр. счёт</Label>
+                                        <CorrAccountInput
+                                            value={formData.corrAccount || ''}
+                                            onChange={(v) => updateField('corrAccount', v)}
+                                        />
+                                    </div>
+                                </>)}
+                                {empType === 'staff' && (
+                                    <div>
+                                        <Label>Оклад</Label>
+                                        <SalaryInput
+                                            value={formData.salary?.toString() || ''}
+                                            onChange={(v) => updateField('salary', v)}
+                                        />
+                                    </div>
+                                )}
+                                <div>
+                                    <Label required>Процент</Label>
+                                    <PercentInput
+                                        value={formData.percent?.toString() || ''}
+                                        onChange={(v) => updateField('percent', v)}
+                                        error={errors.percent}
+                                        required
+                                    />
                                 </div>
                             </div>
-                        </div>
-                    </div>
+                        </FormSection>
 
-                    {/* ДОКУМЕНТЫ */}
-                    <div>
-                        <h3 className="text-[10px] font-semibold text-slate-700 mb-1.5 pb-1 border-b border-slate-100">Документы</h3>
-                        <div className="grid grid-cols-4 gap-1.5 mb-2">
-                            <div><label className={labelClass}>{empType === 'staff' ? 'Дата приёма' : 'Начало'}</label><Input field="hireDate" type="date" readOnly={isExisting} /></div>
-                            <div><label className={labelClass}>ИНН</label><Input field="inn" /></div>
-                            {empType === 'staff' && (<>
-                                <div><label className={labelClass}>Паспорт</label><Input field="passport" /></div>
-                                <div><label className={labelClass}>СНИЛС</label><Input field="snils" /></div>
-                                <div><label className={labelClass}>Тип работы</label><select className={inputClass} value={formData.workType} onChange={e => updateField('workType', e.target.value)}><option value="office">В офисе</option><option value="remote">Удалённо</option></select></div>
-                            </>)}
-                            {empType === 'ip' && <div><label className={labelClass}>ОГРНИП</label><Input field="ogrnip" /></div>}
-                        </div>
-                        <DocumentUpload documents={formData.documents || []} onUpload={handleUploadDocument} onDelete={handleDeleteDocument} onView={handleViewDocument} label="Загрузить документ" />
-                    </div>
-
-                    {/* ФИНАНСЫ */}
-                    <div>
-                        <h3 className="text-[10px] font-semibold text-slate-700 mb-1.5 pb-1 border-b border-slate-100">Финансы</h3>
-                        <div className="grid grid-cols-4 gap-1.5">
-                            <div><label className={labelClass}>Банк</label><Input field="bankName" /></div>
-                            <div><label className={labelClass}>Р/с</label><Input field="bankAccount" /></div>
-                            {(empType === 'staff' || empType === 'selfemployed') && <div><label className={labelClass}>№ карты</label><Input field="cardNumber" /></div>}
-                            {empType === 'ip' && (<>
-                                <div><label className={labelClass}>БИК</label><Input field="bik" /></div>
-                                <div><label className={labelClass}>Корр. счёт</label><Input field="corrAccount" /></div>
-                            </>)}
-                            {empType === 'staff' && <div><label className={labelClass}>Оклад</label><Input field="salary" type="number" /></div>}
-                            <div><label className={labelClass}>Процент</label><Input field="percent" type="number" /></div>
-                        </div>
-                    </div>
-
-                    {/* ДОСТУПЫ */}
-                    <div>
-                        <h3 className="text-[10px] font-semibold text-slate-700 mb-1.5 pb-1 border-b border-slate-100">Доступы</h3>
-                        <div className="flex items-center gap-4">
-                            <div>
-                                <label className={labelClass}>Роль в системе</label>
-                                <select className={inputClass} value={formData.role || 'accountant'} onChange={e => updateField('role', e.target.value)}>
-                                    <option value="admin">Администратор</option>
-                                    <option value="accountant">Бухгалтер</option>
-                                    <option value="assistant">Помощник бухгалтера</option>
-                                </select>
+                        {/* ДОСТУПЫ */}
+                        <FormSection title="Доступы">
+                            <div className="flex items-end gap-6">
+                                <div className="w-48">
+                                    <Label required>Роль в системе</Label>
+                                    <Select
+                                        value={formData.role || ''}
+                                        onChange={(v) => updateField('role', v)}
+                                        placeholder="Выбрать..."
+                                        options={[
+                                            { value: 'admin', label: 'Администратор' },
+                                            { value: 'accountant', label: 'Бухгалтер' },
+                                            { value: 'assistant', label: 'Помощник бухгалтера' }
+                                        ]}
+                                        error={errors.role}
+                                    />
+                                </div>
+                                <div className="flex gap-4 pb-2">
+                                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            checked={formData.isActive !== false}
+                                            onChange={() => updateField('isActive', true)}
+                                            className="w-4 h-4 text-[var(--color-success)]"
+                                        />
+                                        <span className="text-[var(--color-success)]">✓ Активен</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            checked={formData.isActive === false}
+                                            onChange={() => updateField('isActive', false)}
+                                            className="w-4 h-4 text-[var(--color-error)]"
+                                        />
+                                        <span className="text-[var(--color-error)]">⛔ Заблокирован</span>
+                                    </label>
+                                </div>
                             </div>
-                            <div className="flex gap-3 pt-3">
-                                <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="radio" checked={formData.isActive} onChange={() => updateField('isActive', true)} /><span className="text-green-600">✓ Активен</span></label>
-                                <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer"><input type="radio" checked={!formData.isActive} onChange={() => updateField('isActive', false)} /><span className="text-red-500">⛔ Заблокирован</span></label>
-                            </div>
+                        </FormSection>
+
+                        {/* Кнопки */}
+                        <div className="flex gap-3 pt-4 border-t border-[var(--color-border-light)]">
+                            <button
+                                onClick={handleSaveClick}
+                                className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-hover transition-colors"
+                            >
+                                {isAddingNew ? 'Создать' : 'Сохранить'}
+                            </button>
+                            <button
+                                onClick={() => { setIsAddingNew(false); setErrors({}); }}
+                                className="px-4 py-2 bg-[var(--color-bg-muted)] text-[var(--color-text-secondary)] text-sm rounded-lg hover:bg-slate-200 transition-colors"
+                            >
+                                Отмена
+                            </button>
+                            {!isAddingNew && isExisting && currentEmployee && (
+                                <button
+                                    onClick={() => onDelete(currentEmployee)}
+                                    className="ml-auto px-4 py-2 bg-[var(--color-error-bg)] text-[var(--color-error)] text-sm rounded-lg hover:bg-red-100 transition-colors"
+                                >
+                                    {empType === 'staff' ? 'Уволить' : 'Удалить'}
+                                </button>
+                            )}
                         </div>
                     </div>
+                </div>
 
-                    {/* Кнопки */}
-                    <div className="flex gap-2 pt-1">
-                        <button onClick={handleSaveClick} className="px-3 py-1 bg-primary text-white text-[10px] rounded hover:bg-primary-hover">{isAddingNew ? 'Создать' : 'Сохранить'}</button>
-                        <button onClick={() => isAddingNew ? setIsAddingNew(false) : {}} className="px-3 py-1 bg-slate-100 text-slate-600 text-[10px] rounded hover:bg-slate-200">Отмена</button>
-                        {!isAddingNew && isExisting && currentEmployee && <button onClick={() => onDelete(currentEmployee)} className="ml-auto px-3 py-1 bg-red-50 text-red-600 text-[10px] rounded hover:bg-red-100">{empType === 'staff' ? 'Уволить' : 'Удалить'}</button>}
+                {/* Правая колонка */}
+                <div className="w-[30%] flex flex-col">
+                    <button onClick={handleAddNew} className={`w-full mb-2 px-2 py-1.5 text-[10px] rounded-lg flex items-center justify-center gap-1 ${isAddingNew ? 'bg-green-500 text-white' : 'bg-primary text-white hover:bg-primary-hover'}`}>
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                        {isAddingNew ? 'Создание...' : 'Добавить'}
+                    </button>
+                    <div className="bg-white rounded-lg border border-slate-200 flex-1 overflow-y-auto">
+                        {employees.map(emp => (
+                            <div key={emp.id} onClick={() => handleSelectEmployee(emp.id)}
+                                className={`px-2 py-1.5 cursor-pointer border-b border-slate-100 last:border-0 ${selectedEmployee === emp.id && !isAddingNew ? 'bg-primary/5 border-l-4 border-l-primary' : 'hover:bg-slate-50'}`}>
+                                <div className="text-[10px] font-medium text-slate-800">{emp.lastName} {emp.firstName}</div>
+                                <div className="text-[9px] text-slate-400">{emp.employmentType === 'staff' ? '👔' : emp.employmentType === 'selfemployed' ? '📱' : '🏢'} {!emp.isActive && '⛔'}</div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </div>
 
-            {/* Правая колонка */}
-            <div className="w-[30%] flex flex-col">
-                <button onClick={handleAddNew} className={`w-full mb-2 px-2 py-1.5 text-[10px] rounded-lg flex items-center justify-center gap-1 ${isAddingNew ? 'bg-green-500 text-white' : 'bg-primary text-white hover:bg-primary-hover'}`}>
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                    {isAddingNew ? 'Создание...' : 'Добавить'}
-                </button>
-                <div className="bg-white rounded-lg border border-slate-200 flex-1 overflow-y-auto">
-                    {employees.map(emp => (
-                        <div key={emp.id} onClick={() => handleSelectEmployee(emp.id)}
-                            className={`px-2 py-1.5 cursor-pointer border-b border-slate-100 last:border-0 ${selectedEmployee === emp.id && !isAddingNew ? 'bg-primary/5 border-l-4 border-l-primary' : 'hover:bg-slate-50'}`}>
-                            <div className="text-[10px] font-medium text-slate-800">{emp.lastName} {emp.firstName}</div>
-                            <div className="text-[9px] text-slate-400">{emp.employmentType === 'staff' ? '👔' : emp.employmentType === 'selfemployed' ? '📱' : '🏢'} {!emp.isActive && '⛔'}</div>
+            {/* МОДАЛЬНОЕ ОКНО СОХРАНЕНИЯ */}
+            {
+                showSaveModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden animate-in fade-in zoom-in duration-200">
+                            {/* Заголовок */}
+                            <div className={`px-5 py-4 ${saveModalType === 'error' ? 'bg-red-50' :
+                                saveModalType === 'success' ? 'bg-green-50' :
+                                    'bg-primary/5'
+                                }`}>
+                                <div className="flex items-center gap-3">
+                                    {saveModalType === 'error' && (
+                                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                            <span className="text-xl">⚠️</span>
+                                        </div>
+                                    )}
+                                    {saveModalType === 'confirm' && (
+                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                            <span className="text-xl">💾</span>
+                                        </div>
+                                    )}
+                                    {saveModalType === 'success' && (
+                                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                                            <span className="text-xl">✅</span>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <h3 className="font-semibold text-slate-800">
+                                            {saveModalType === 'error' && 'Внимание!'}
+                                            {saveModalType === 'confirm' && 'Подтверждение сохранения'}
+                                            {saveModalType === 'success' && 'Успешно сохранено'}
+                                        </h3>
+                                        <p className="text-xs text-slate-500">
+                                            {saveModalType === 'error' && 'Заполните обязательные поля'}
+                                            {saveModalType === 'confirm' && 'Обновление данных сотрудника'}
+                                            {saveModalType === 'success' && 'Данные сотрудника сохранены'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Контент */}
+                            <div className="px-5 py-4">
+                                {saveModalType === 'error' && (
+                                    <div className="text-sm text-red-600">
+                                        <p>Пожалуйста, заполните все обязательные поля (выделены красным).</p>
+                                    </div>
+                                )}
+                                {saveModalType === 'confirm' && (
+                                    <div className="text-sm text-slate-600">
+                                        <p className="mb-3">Вы уверены, что хотите сохранить карточку сотрудника?</p>
+                                        <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-xs">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">ФИО:</span>
+                                                <span className="font-medium">{formData.lastName || '—'} {formData.firstName || ''}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Email:</span>
+                                                <span className="font-medium">{formData.email || '—'}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Тип:</span>
+                                                <span className="font-medium">
+                                                    {empType === 'staff' ? 'Штатный' : empType === 'selfemployed' ? 'Самозанятый' : 'ИП'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {saveModalType === 'success' && (
+                                    <div className="text-center py-2">
+                                        <div className="text-4xl mb-2">🎉</div>
+                                        <p className="text-sm text-slate-600">Карточка сотрудника успешно сохранена</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Кнопки */}
+                            {saveModalType !== 'success' && (
+                                <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end">
+                                    {saveModalType === 'confirm' && (
+                                        <button
+                                            onClick={() => setShowSaveModal(false)}
+                                            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 transition-colors"
+                                        >
+                                            Отмена
+                                        </button>
+                                    )}
+                                    {saveModalType === 'confirm' && (
+                                        <button
+                                            onClick={handleConfirmSave}
+                                            disabled={isSaving}
+                                            className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-50"
+                                        >
+                                            {isSaving ? '⏳ Сохранение...' : '💾 Сохранить'}
+                                        </button>
+                                    )}
+                                    {saveModalType === 'error' && (
+                                        <button
+                                            onClick={() => setShowSaveModal(false)}
+                                            className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors"
+                                        >
+                                            Понятно
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                    ))}
-                </div>
-            </div>
-        </div>
+                    </div>
+                )
+            }
+        </>
     );
 };
 
@@ -458,11 +857,13 @@ const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDe
 
 interface StaffViewProps {
     employees?: Employee[];
+    legalEntities?: LegalEntity[];
     onSave?: (emp: Employee) => void;
     onDelete?: (emp: Employee) => void;
+    confirm?: (options: { title: string; message: string; confirmButtonText?: string }) => Promise<boolean>;
 }
 
-export const StaffView: React.FC<StaffViewProps> = ({ employees = [], onSave = () => { }, onDelete = () => { } }) => {
+export const StaffView: React.FC<StaffViewProps> = ({ employees = [], legalEntities = [], onSave = () => { }, onDelete = () => { }, confirm }) => {
     const [activeTab, setActiveTab] = useState<StaffTab>('list');
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
@@ -501,11 +902,10 @@ export const StaffView: React.FC<StaffViewProps> = ({ employees = [], onSave = (
             </div>
 
             {/* Контент */}
-            {/* Контент */}
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
-                {activeTab === 'list' && <StaffListTab employees={employees} onSelectEmployee={handleSelectEmployee} />}
-                {activeTab === 'details' && <StaffDetailsTab employees={employees} employeeId={selectedEmployeeId} />}
-                {activeTab === 'manage' && <StaffManageTab employees={employees} onSave={onSave} onDelete={onDelete} />}
+                {activeTab === 'list' && <StaffListTab employees={employees} legalEntities={legalEntities} onSelectEmployee={handleSelectEmployee} />}
+                {activeTab === 'details' && <StaffDetailsTab employees={employees} employeeId={selectedEmployeeId} legalEntities={legalEntities} />}
+                {activeTab === 'manage' && <StaffManageTab employees={employees} onSave={onSave} onDelete={onDelete} confirm={confirm} />}
             </div>
         </div>
     );

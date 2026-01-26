@@ -4,8 +4,8 @@ import React, { useState, useMemo } from 'react';
 import { Task, TaskStatus, LegalEntity } from '../types';
 import { TaskItem } from './TaskItem';
 import { TASK_STATUS_STYLES } from '../constants';
-import { toISODateString, isWeekend } from '../utils/dateUtils';
-import { isHoliday } from '../services/holidayService';
+import { toISODateString } from '../utils/dateUtils';
+import { getDateProps } from '../services/dateRegistry';
 
 
 interface CalendarProps {
@@ -149,8 +149,8 @@ const MonthView: React.FC<{ tasks: Task[]; legalEntities: LegalEntity[]; current
             {days.map((d, i) => {
                 const isCurrentMonth = d.getMonth() === currentDate.getMonth();
                 const isToday = d.getTime() === today.getTime();
-                const isWknd = isWeekend(d);
-                const isHol = isHoliday(d);
+                const dateProps = getDateProps(d);
+                const isNonWorkday = !dateProps.isWorkday;
 
                 const tasksForDay = tasks.filter(t => new Date(t.dueDate).toDateString() === d.toDateString());
                 const groupedTasks = new Map<string, Task[]>();
@@ -164,13 +164,13 @@ const MonthView: React.FC<{ tasks: Task[]; legalEntities: LegalEntity[]; current
                 const taskGroups = Array.from(groupedTasks.values());
 
                 return (
-                    <div key={i} onClick={() => onSelectDate(d)} className={`p-2 min-h-[120px] cursor-pointer group relative ${!isCurrentMonth ? 'bg-slate-50' : (isWknd || isHol) ? 'bg-red-50' : 'bg-white'} hover:bg-indigo-50`}>
+                    <div key={i} onClick={() => onSelectDate(d)} className={`p-2 min-h-[120px] cursor-pointer group relative ${!isCurrentMonth ? 'bg-slate-50' : isNonWorkday ? 'bg-red-50' : 'bg-white'} hover:bg-indigo-50`}>
                         {isCurrentMonth && (
                             <button onClick={(e) => { e.stopPropagation(); onAddTask(d); }} className="absolute top-1 right-1 p-1 rounded-full opacity-0 group-hover:opacity-100 hover:bg-indigo-200 transition-opacity z-10" aria-label="Добавить задачу">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-600" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
                             </button>
                         )}
-                        <div className={`flex items-center justify-center h-7 w-7 rounded-full text-sm transition-colors ${isToday ? 'bg-indigo-600 text-white font-bold' : ''} ${!isCurrentMonth ? 'text-slate-400' : (isWknd || isHol) ? 'text-red-600' : 'text-slate-700'}`}>
+                        <div className={`flex items-center justify-center h-7 w-7 rounded-full text-sm transition-colors ${isToday ? 'bg-indigo-600 text-white font-bold' : ''} ${!isCurrentMonth ? 'text-slate-400' : isNonWorkday ? 'text-red-600' : 'text-slate-700'}`}>
                             {d.getDate()}
                         </div>
                         <div className="mt-1 space-y-1">
@@ -242,18 +242,18 @@ const MiniMonthGrid: React.FC<{ year: number; month: number; tasks: Task[]; onSe
                 {weekDays.map((wd, i) => <div key={i} className="text-center text-xs font-semibold text-slate-500">{wd}</div>)}
                 {days.map((d, i) => {
                     const isCurrentMonth = d.getMonth() === month;
-                    const isWknd = isWeekend(d);
-                    const isHol = isHoliday(d);
+                    const dateProps = getDateProps(d);
+                    const isNonWorkday = !dateProps.isWorkday;
                     const tasksForDay = isCurrentMonth ? tasks.filter(t => new Date(t.dueDate).toDateString() === d.toDateString()) : [];
                     const statuses = [...new Set(tasksForDay.map(t => t.status))];
                     return (
-                        <div key={i} onClick={() => isCurrentMonth && onSelectDate(d)} className={`p-1 text-center cursor-pointer rounded-md relative group ${!isCurrentMonth ? 'bg-slate-50' : ''} ${isCurrentMonth && (isWknd || isHol) ? 'bg-red-50' : ''} ${isCurrentMonth ? 'hover:bg-indigo-100' : ''}`}>
+                        <div key={i} onClick={() => isCurrentMonth && onSelectDate(d)} className={`p-1 text-center cursor-pointer rounded-md relative group ${!isCurrentMonth ? 'bg-slate-50' : ''} ${isCurrentMonth && isNonWorkday ? 'bg-red-50' : ''} ${isCurrentMonth ? 'hover:bg-indigo-100' : ''}`}>
                             {isCurrentMonth && (
                                 <button onClick={(e) => { e.stopPropagation(); onAddTask(d); }} className="absolute top-0 right-0 p-px rounded-full opacity-0 group-hover:opacity-100 hover:bg-indigo-200 transition-opacity z-10" aria-label="Добавить задачу">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
                                 </button>
                             )}
-                            <span className={`text-xs ${!isCurrentMonth ? 'text-slate-300' : d.getTime() === today.getTime() ? 'text-indigo-600 font-bold' : (isWknd || isHol) ? 'text-red-600' : 'text-slate-600'}`}>{d.getDate()}</span>
+                            <span className={`text-xs ${!isCurrentMonth ? 'text-slate-300' : d.getTime() === today.getTime() ? 'text-indigo-600 font-bold' : isNonWorkday ? 'text-red-600' : 'text-slate-600'}`}>{d.getDate()}</span>
                             <div className="flex justify-center items-center h-2 space-x-px mt-px">
                                 {isCurrentMonth && statuses.slice(0, 4).map((status: TaskStatus) => {
                                     const statusStyle = TASK_STATUS_STYLES[status] || TASK_STATUS_STYLES[TaskStatus.Upcoming];

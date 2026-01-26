@@ -1,11 +1,14 @@
 // components/ClientsView.tsx
 // Новый компонент списка и детализации клиентов
 
-import React, { useState, useMemo } from 'react';
-import { DocumentUpload } from './DocumentUpload';
+import React, { useState, useMemo, useEffect } from 'react';
+import { ServerDocumentUpload } from './ServerDocumentUpload';
+import { ContractUpload } from './ContractUpload';
 import { MiniCalendar } from './MiniCalendar';
+import { EmployeeAvatar } from './EmployeeAvatar';
 import { LegalEntity, TaxSystem as GlobalTaxSystem, LegalForm as GlobalLegalForm, Employee, UploadedDocument } from '../types';
-
+import * as taskStorage from '../services/taskStorageService';
+import { getStatusIcon as getStatusIconFn } from '../services/taskIndicators';
 
 
 // ============================================
@@ -414,7 +417,11 @@ const PatentsSection: React.FC<{ patents: Patent[]; isIP: boolean }> = ({ patent
 // ВКЛАДКА СПИСОК
 // ============================================
 
-const ClientListTab: React.FC<{ clients: Client[], onSelectClient: (id: string) => void }> = ({ clients, onSelectClient }) => {
+const ClientListTab: React.FC<{
+    clients: Client[],
+    onSelectClient: (id: string) => void,
+    onViewContract?: (clientId: string, clientName: string) => void
+}> = ({ clients, onSelectClient, onViewContract }) => {
     return (
         <div className="space-y-2">
             {clients.map(client => (
@@ -470,12 +477,27 @@ const ClientListTab: React.FC<{ clients: Client[], onSelectClient: (id: string) 
 
                         <div className="w-[80px] text-center">
                             <div className="text-[10px] text-slate-500">Договор</div>
-                            <button className="text-[10px] text-primary hover:underline">📄 Открыть</button>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onViewContract?.(client.id, client.name);
+                                }}
+                                className="text-[10px] text-green-600 hover:text-green-800 hover:underline font-medium"
+                            >
+                                📄 Открыть
+                            </button>
                         </div>
 
-                        <div className="flex-1 text-right">
-                            <div className="text-[10px] text-slate-500">Бухгалтер</div>
-                            <div className="text-xs font-medium text-slate-700">{client.managerName}</div>
+                        <div className="flex-1 text-right flex items-center justify-end gap-2">
+                            <EmployeeAvatar
+                                employeeId={client.managerId}
+                                name={client.managerName}
+                                size="xs"
+                            />
+                            <div>
+                                <div className="text-[10px] text-slate-500">Бухгалтер</div>
+                                <div className="text-xs font-medium text-slate-700">{client.managerName}</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -493,6 +515,53 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
     const [newComment, setNewComment] = useState('');
     const client = clients.find(c => c.id === selectedClientId) || clients[0];
 
+    // === Загрузка задач клиента ===
+    const [clientTasks, setClientTasks] = useState<taskStorage.StoredTask[]>([]);
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+
+    useEffect(() => {
+        if (selectedClientId) {
+            taskStorage.getAllTasks({ clientId: selectedClientId }).then(tasks => {
+                setClientTasks(tasks);
+            });
+        }
+    }, [selectedClientId]);
+
+    // Преобразуем задачи для MiniCalendar
+    const calendarTasks = clientTasks.map(t => ({
+        id: t.id,
+        dueDate: t.currentDueDate,
+        status: t.status,
+        isUrgent: false
+    }));
+
+    // Фильтруем задачи по выбранной дате или месяцу
+    const filteredTasks = selectedDate
+        ? clientTasks.filter(t => {
+            const taskDate = new Date(t.currentDueDate);
+            return taskDate.toDateString() === selectedDate.toDateString();
+        })
+        : clientTasks.filter(t => {
+            const taskDate = new Date(t.currentDueDate);
+            return taskDate.getMonth() === currentMonth.getMonth()
+                && taskDate.getFullYear() === currentMonth.getFullYear();
+        });
+
+    // Иконки статусов
+    const renderStatusIcon = (task: taskStorage.StoredTask) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const dueDate = new Date(task.currentDueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        const icon = getStatusIconFn({
+            status: task.status,
+            dueDate: task.currentDueDate,
+            isBlocked: false
+        }, 'sm');
+        return <span className="text-[9px]">{icon}</span>;
+    };
+
     const labelClass = "block text-[10px] text-slate-500 mb-0.5";
     const valueClass = "text-xs font-medium text-slate-800";
     const inputClass = "w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-primary/30";
@@ -508,7 +577,7 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
     return (
         <div className="h-full flex gap-4">
             {/* Левая часть (70%) */}
-            <div className="w-[70%] h-full overflow-y-auto space-y-3">
+            <div className="flex-1 min-w-0 h-full overflow-y-auto space-y-3">
                 {!hasClient ? (
                     // Пустое состояние — нет клиентов
                     <div className="h-full flex items-center justify-center">
@@ -621,7 +690,17 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
                                     </div>
                                 </div>
                                 <div><span className={labelClass}>Тариф</span><div className="text-sm font-bold text-primary">{client.tariff.name}</div></div>
-                                <div><span className={labelClass}>Бухгалтер</span><div className={valueClass}>{client.managerName}</div></div>
+                                <div>
+                                    <span className={labelClass}>Бухгалтер</span>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <EmployeeAvatar
+                                            employeeId={client.managerId}
+                                            name={client.managerName}
+                                            size="xs"
+                                        />
+                                        <span className={valueClass}>{client.managerName}</span>
+                                    </div>
+                                </div>
                                 {client.tariff.description && (
                                     <div className="col-span-1">
                                         <span className={labelClass}>Описание услуг</span>
@@ -637,14 +716,18 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
                             <CredentialsSection credentials={client.credentials || []} />
                         </div>
 
+                        {/* Договор */}
+                        <div className="bg-white rounded-lg border border-green-200 p-3">
+                            <h3 className="text-[10px] font-semibold text-green-700 mb-2 pb-1 border-b border-green-100">📝 Договор</h3>
+                            <ContractUpload clientId={selectedClientId} />
+                        </div>
+
                         {/* Документы */}
                         <div className="bg-white rounded-lg border border-slate-200 p-3">
-                            <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Документы</h3>
-                            <DocumentUpload
-                                documents={mockDocs}
-                                onUpload={(f) => console.log('Upload:', f.name)}
-                                onDelete={(id) => console.log('Delete:', id)}
-                                onView={(doc) => console.log('View:', doc)}
+                            <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">📎 Документы</h3>
+                            <ServerDocumentUpload
+                                entityType="clients"
+                                entityId={selectedClientId}
                                 label="Загрузить документ"
                             />
                         </div>
@@ -682,17 +765,64 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
                 )}
             </div>
 
-            {/* Правая часть (30%) */}
-            <div className="w-[30%] flex flex-col gap-3">
-                {/* Мини-календарь (без дополнительной обёртки) */}
-                <MiniCalendar tasks={[]} />
+            {/* Правая часть (фиксированная ширина) */}
+            <div className="w-72 flex-shrink-0 flex flex-col gap-3">
+                {/* Мини-календарь с задачами */}
+                <MiniCalendar
+                    tasks={calendarTasks}
+                    selectedDate={selectedDate}
+                    onDayClick={(date, tasks) => {
+                        setSelectedDate(date);
+                    }}
+                    onDateChange={(date) => setCurrentMonth(date)}
+                    showFullMonthButton={!!selectedDate}
+                    onShowFullMonth={() => setSelectedDate(null)}
+                />
 
                 {/* Список задач */}
                 <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 overflow-y-auto">
-                    <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Задачи клиента</h3>
-                    <div className="space-y-1 text-[10px] text-slate-400 text-center py-4">
-                        Нет активных задач
-                    </div>
+                    <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">
+                        Задачи {selectedDate ? (
+                            <span className="text-slate-400 font-normal ml-1">
+                                ({selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })})
+                            </span>
+                        ) : (
+                            <span className="text-slate-400 font-normal ml-1">
+                                ({currentMonth.toLocaleDateString('ru-RU', { month: 'long' })})
+                            </span>
+                        )}
+                    </h3>
+                    {filteredTasks.length === 0 ? (
+                        <div className="text-[10px] text-slate-400 text-center py-4">
+                            {selectedDate ? 'Нет задач на эту дату' : 'Нет задач в этом месяце'}
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {filteredTasks.slice(0, 10).map(task => {
+                                const dueDate = new Date(task.currentDueDate);
+                                const isOverdue = dueDate < new Date() && task.status !== 'completed';
+                                return (
+                                    <div key={task.id} className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
+                                        <div className="flex items-center gap-1.5">
+                                            {renderStatusIcon(task)}
+                                            <span className="flex-1 text-[10px] font-medium text-slate-700 truncate">{task.title}</span>
+                                            <span className="text-[9px] text-slate-400">
+                                                {dueDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                                            </span>
+                                        </div>
+                                        {task.description && (
+                                            <div className="text-[9px] text-slate-400 ml-4 truncate">({task.description})</div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                            {filteredTasks.length > 10 && (
+                                <div className="text-[10px] text-primary text-center pt-1">
+                                    ещё {filteredTasks.length - 10} задач...
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Статистика */}
@@ -947,8 +1077,12 @@ const ClientManageTab: React.FC<{
 
                 // === НОВЫЕ ПОЛЯ ===
 
-                // Назначенный бухгалтер
-                accountantName: formData.accountant || undefined,
+                // Назначенный бухгалтер (сохраняем ID и имя)
+                accountantId: formData.accountant || undefined,
+                accountantName: (() => {
+                    const emp = employees.find(e => e.id === formData.accountant);
+                    return emp ? `${emp.lastName} ${emp.firstName}` : undefined;
+                })(),
 
                 // Статус клиента
                 clientStatus: (formData.status as 'permanent' | 'onetime') || 'permanent',
@@ -1034,7 +1168,7 @@ const ClientManageTab: React.FC<{
                 taxSystem: currentClient.taxSystem || 'usn6',
                 status: currentClient.status || 'permanent',
                 tariff: currentClient.tariff?.name || 'Стандарт',
-                accountant: currentClient.managerName || '',
+                accountant: currentClient.managerId || '',
                 legalAddress: currentClient.legalAddress || '',
                 actualAddress: currentClient.actualAddress || '',
                 bankName: currentClient.bankName || '',
@@ -1275,15 +1409,11 @@ const ClientManageTab: React.FC<{
                                     {employees
                                         .filter(e => e.role === 'accountant' || e.role === 'admin')
                                         .map(e => (
-                                            <option key={e.id} value={`${e.lastName} ${e.firstName}`}>
+                                            <option key={e.id} value={e.id}>
                                                 {e.lastName} {e.firstName}
                                             </option>
                                         ))
                                     }
-                                    {/* Fallback for existing values not in list */}
-                                    {!employees.find(e => `${e.lastName} ${e.firstName}` === formData.accountant) && formData.accountant && (
-                                        <option value={formData.accountant}>{formData.accountant}</option>
-                                    )}
                                 </select>
                             </div>
                         </div>
@@ -1484,16 +1614,29 @@ const ClientManageTab: React.FC<{
                         </div>
                     )}
 
+                    {/* ДОГОВОР */}
+                    <div className={sectionClass}>
+                        <div className="text-[10px] font-semibold text-green-600 uppercase tracking-wide">📝 Договор</div>
+                        {selectedClientId ? (
+                            <ContractUpload clientId={selectedClientId} />
+                        ) : (
+                            <div className="text-xs text-slate-400 text-center py-2">Сохраните клиента для загрузки договора</div>
+                        )}
+                    </div>
+
                     {/* ДОКУМЕНТЫ */}
                     <div className={sectionClass}>
                         <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">📎 Документы</div>
-                        <DocumentUpload
-                            documents={[]}
-                            onUpload={() => { }}
-                            onDelete={() => { }}
-                            onView={() => { }}
-                        />
+                        {selectedClientId ? (
+                            <ServerDocumentUpload
+                                entityType="clients"
+                                entityId={selectedClientId}
+                            />
+                        ) : (
+                            <div className="text-xs text-slate-400 text-center py-2">Сохраните клиента для загрузки документов</div>
+                        )}
                     </div>
+
 
                     {/* КНОПКИ */}
                     <div className="flex justify-between pt-2 border-t border-slate-100">
@@ -1565,113 +1708,115 @@ const ClientManageTab: React.FC<{
             </div>
 
             {/* МОДАЛЬНОЕ ОКНО СОХРАНЕНИЯ */}
-            {showSaveModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden animate-in fade-in zoom-in duration-200">
-                        {/* Заголовок */}
-                        <div className={`px-5 py-4 ${saveModalType === 'error' ? 'bg-red-50' :
-                            saveModalType === 'success' ? 'bg-green-50' :
-                                'bg-primary/5'
-                            }`}>
-                            <div className="flex items-center gap-3">
+            {
+                showSaveModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden animate-in fade-in zoom-in duration-200">
+                            {/* Заголовок */}
+                            <div className={`px-5 py-4 ${saveModalType === 'error' ? 'bg-red-50' :
+                                saveModalType === 'success' ? 'bg-green-50' :
+                                    'bg-primary/5'
+                                }`}>
+                                <div className="flex items-center gap-3">
+                                    {saveModalType === 'error' && (
+                                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                            <span className="text-xl">⚠️</span>
+                                        </div>
+                                    )}
+                                    {saveModalType === 'confirm' && (
+                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                            <span className="text-xl">💾</span>
+                                        </div>
+                                    )}
+                                    {saveModalType === 'success' && (
+                                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                                            <span className="text-xl">✅</span>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <h3 className="font-semibold text-slate-800">
+                                            {saveModalType === 'error' && 'Внимание!'}
+                                            {saveModalType === 'confirm' && 'Подтверждение сохранения'}
+                                            {saveModalType === 'success' && 'Успешно сохранено'}
+                                        </h3>
+                                        <p className="text-xs text-slate-500">
+                                            {saveModalType === 'error' && 'Заполните обязательные поля'}
+                                            {saveModalType === 'confirm' && (isAddingNew ? 'Создание нового клиента' : 'Обновление данных клиента')}
+                                            {saveModalType === 'success' && 'Данные клиента сохранены'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Контент */}
+                            <div className="px-5 py-4">
                                 {saveModalType === 'error' && (
-                                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                                        <span className="text-xl">⚠️</span>
+                                    <div className="text-sm text-red-600">
+                                        <p>Пожалуйста, заполните все обязательные поля (выделены красным).</p>
                                     </div>
                                 )}
                                 {saveModalType === 'confirm' && (
-                                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                        <span className="text-xl">💾</span>
+                                    <div className="text-sm text-slate-600">
+                                        <p className="mb-3">Вы уверены, что хотите сохранить карточку клиента?</p>
+                                        <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-xs">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Название:</span>
+                                                <span className="font-medium">{formData.name || '—'}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">ИНН:</span>
+                                                <span className="font-medium">{formData.inn || '—'}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Форма:</span>
+                                                <span className="font-medium">{getLegalFormLabel(legalForm)}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                                 {saveModalType === 'success' && (
-                                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                                        <span className="text-xl">✅</span>
+                                    <div className="text-center py-2">
+                                        <div className="text-4xl mb-2">🎉</div>
+                                        <p className="text-sm text-slate-600">Карточка клиента успешно сохранена</p>
                                     </div>
                                 )}
-                                <div>
-                                    <h3 className="font-semibold text-slate-800">
-                                        {saveModalType === 'error' && 'Внимание!'}
-                                        {saveModalType === 'confirm' && 'Подтверждение сохранения'}
-                                        {saveModalType === 'success' && 'Успешно сохранено'}
-                                    </h3>
-                                    <p className="text-xs text-slate-500">
-                                        {saveModalType === 'error' && 'Заполните обязательные поля'}
-                                        {saveModalType === 'confirm' && (isAddingNew ? 'Создание нового клиента' : 'Обновление данных клиента')}
-                                        {saveModalType === 'success' && 'Данные клиента сохранены'}
-                                    </p>
-                                </div>
                             </div>
-                        </div>
 
-                        {/* Контент */}
-                        <div className="px-5 py-4">
-                            {saveModalType === 'error' && (
-                                <div className="text-sm text-red-600">
-                                    <p>Пожалуйста, заполните все обязательные поля (выделены красным).</p>
-                                </div>
-                            )}
-                            {saveModalType === 'confirm' && (
-                                <div className="text-sm text-slate-600">
-                                    <p className="mb-3">Вы уверены, что хотите сохранить карточку клиента?</p>
-                                    <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-xs">
-                                        <div className="flex justify-between">
-                                            <span className="text-slate-500">Название:</span>
-                                            <span className="font-medium">{formData.name || '—'}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-slate-500">ИНН:</span>
-                                            <span className="font-medium">{formData.inn || '—'}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-slate-500">Форма:</span>
-                                            <span className="font-medium">{getLegalFormLabel(legalForm)}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            {saveModalType === 'success' && (
-                                <div className="text-center py-2">
-                                    <div className="text-4xl mb-2">🎉</div>
-                                    <p className="text-sm text-slate-600">Карточка клиента успешно сохранена</p>
+                            {/* Кнопки */}
+                            {saveModalType !== 'success' && (
+                                <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end">
+                                    {saveModalType === 'confirm' && (
+                                        <button
+                                            onClick={() => setShowSaveModal(false)}
+                                            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 transition-colors"
+                                        >
+                                            Отмена
+                                        </button>
+                                    )}
+                                    {saveModalType === 'confirm' && (
+                                        <button
+                                            onClick={handleConfirmSave}
+                                            disabled={isSaving}
+                                            className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-50"
+                                        >
+                                            {isSaving ? '⏳ Сохранение...' : '💾 Сохранить'}
+                                        </button>
+                                    )}
+                                    {saveModalType === 'error' && (
+                                        <button
+                                            onClick={() => setShowSaveModal(false)}
+                                            className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors"
+                                        >
+                                            Понятно
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>
-
-                        {/* Кнопки */}
-                        {saveModalType !== 'success' && (
-                            <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex gap-3 justify-end">
-                                {saveModalType === 'confirm' && (
-                                    <button
-                                        onClick={() => setShowSaveModal(false)}
-                                        className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 transition-colors"
-                                    >
-                                        Отмена
-                                    </button>
-                                )}
-                                {saveModalType === 'confirm' && (
-                                    <button
-                                        onClick={handleConfirmSave}
-                                        disabled={isSaving}
-                                        className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-50"
-                                    >
-                                        {isSaving ? '⏳ Сохранение...' : '💾 Сохранить'}
-                                    </button>
-                                )}
-                                {saveModalType === 'error' && (
-                                    <button
-                                        onClick={() => setShowSaveModal(false)}
-                                        className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors"
-                                    >
-                                        Понятно
-                                    </button>
-                                )}
-                            </div>
-                        )}
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 
@@ -1685,11 +1830,14 @@ interface ClientsViewProps {
     onDelete: (entity: LegalEntity) => void;
     onArchive?: (entity: LegalEntity) => void;
     employees?: Employee[];
+    initialClientId?: string; // Для перехода сразу в детализацию клиента
 }
 
-export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave, onDelete, onArchive, employees = [] }) => {
-    const [activeTab, setActiveTab] = useState<ClientTab>('list');
-    const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave, onDelete, onArchive, employees = [], initialClientId }) => {
+    // Если есть initialClientId — сразу открываем details
+    const [activeTab, setActiveTab] = useState<ClientTab>(initialClientId ? 'details' : 'list');
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(initialClientId || null);
+    const [contractPreview, setContractPreview] = useState<{ clientId: string; clientName: string } | null>(null);
 
     // Конвертируем LegalEntity в Client для отображения в UI
     const clients = useMemo(() => {
@@ -1699,6 +1847,10 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
     const handleSelectClient = (id: string) => {
         setSelectedClientId(id);
         setActiveTab('details');
+    };
+
+    const handleViewContract = (clientId: string, clientName: string) => {
+        setContractPreview({ clientId, clientName });
     };
 
     const tabs = [
@@ -1727,12 +1879,137 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
             </div>
 
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
-                {activeTab === 'list' && <ClientListTab clients={clients} onSelectClient={handleSelectClient} />}
+                {activeTab === 'list' && <ClientListTab clients={clients} onSelectClient={handleSelectClient} onViewContract={handleViewContract} />}
                 {activeTab === 'details' && <ClientDetailsTab clients={clients} clientId={selectedClientId} />}
                 {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={onSave} onDelete={onDelete} employees={employees} />}
+            </div>
+
+            {/* Модалка просмотра договора из списка */}
+            {contractPreview && (
+                <ContractPreviewFromList
+                    clientId={contractPreview.clientId}
+                    clientName={contractPreview.clientName}
+                    onClose={() => setContractPreview(null)}
+                />
+            )}
+        </div>
+    );
+};
+
+// Компонент предпросмотра договора (используется из списка)
+const ContractPreviewFromList: React.FC<{
+    clientId: string;
+    clientName: string;
+    onClose: () => void;
+}> = ({ clientId, clientName, onClose }) => {
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [blobUrl, setBlobUrl] = useState<string | null>(null);
+    const [contractName, setContractName] = useState<string>('');
+
+    const SERVER_URL = 'http://localhost:3001';
+    const DEFAULT_TENANT = 'org_default';
+
+    React.useEffect(() => {
+        const loadContract = async () => {
+            try {
+                // Сначала получаем метаданные
+                const metaRes = await fetch(`${SERVER_URL}/api/${DEFAULT_TENANT}/clients/${clientId}/contract`);
+                if (!metaRes.ok) {
+                    setError('Договор не загружен');
+                    setIsLoading(false);
+                    return;
+                }
+                const meta = await metaRes.json();
+                setContractName(meta.name);
+
+                // Затем загружаем файл
+                const fileRes = await fetch(`${SERVER_URL}/api/${DEFAULT_TENANT}/clients/${clientId}/contract/view`);
+                if (!fileRes.ok) throw new Error('Failed to load file');
+
+                const blob = await fileRes.blob();
+                setBlobUrl(URL.createObjectURL(blob));
+                setIsLoading(false);
+            } catch (err) {
+                setError('Ошибка загрузки договора');
+                setIsLoading(false);
+            }
+        };
+
+        loadContract();
+
+        return () => {
+            if (blobUrl) URL.revokeObjectURL(blobUrl);
+        };
+    }, [clientId]);
+
+    React.useEffect(() => {
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [onClose]);
+
+    return (
+        <div
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50"
+            onClick={(e) => e.target === e.currentTarget && onClose()}
+        >
+            <div className="bg-white rounded-lg shadow-2xl w-[95vw] h-[95vh] flex flex-col">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-green-50">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                            <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <div className="text-[10px] text-green-600 font-semibold uppercase tracking-wide">Договор</div>
+                            <h3 className="text-lg font-semibold text-slate-800">{clientName}</h3>
+                            {contractName && <p className="text-sm text-slate-500">{contractName}</p>}
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg">
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-hidden bg-slate-200 relative">
+                    {isLoading && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white">
+                            <div className="flex flex-col items-center gap-3">
+                                <svg className="w-8 h-8 animate-spin text-green-500" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                <span className="text-slate-500">Загрузка договора...</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white">
+                            <div className="text-center">
+                                <svg className="w-16 h-16 mx-auto mb-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <p className="text-lg text-slate-600">{error}</p>
+                                <p className="text-sm text-slate-400 mt-2">Загрузите договор в карточке клиента</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {!isLoading && !error && blobUrl && (
+                        <iframe src={blobUrl} className="w-full h-full border-0" title="Договор" />
+                    )}
+                </div>
             </div>
         </div>
     );
 };
 
 export default ClientsView;
+

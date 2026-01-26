@@ -1,22 +1,14 @@
 // hooks/useTasks.ts
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Task, LegalEntity, TaskStatus } from '../types';
 import { generateTasksForLegalEntity, updateTaskStatuses } from '../services/taskGenerator';
-// TODO: Переделать уведомления для веб-версии
+import * as taskSync from '../services/taskSyncService';
+import * as taskStorage from '../services/taskStorageService';
 
 export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<string, LegalEntity>) => {
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    const savedTasks = localStorage.getItem('tasks');
-    if (!savedTasks) return [];
-    const parsedTasks = JSON.parse(savedTasks);
-    const validStatuses = Object.values(TaskStatus);
-    return parsedTasks.map((task: any) => {
-      if (!task.status || !validStatuses.includes(task.status)) {
-        task.status = TaskStatus.Upcoming;
-      }
-      return { ...task, dueDate: new Date(task.dueDate) };
-    });
-  });
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isDBAvailable, setIsDBAvailable] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const notificationCheckRef = useRef(false);
 
@@ -26,42 +18,77 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
   const [isTaskDetailModalOpen, setIsTaskDetailModalOpen] = useState(false);
   const [tasksForDetailView, setTasksForDetailView] = useState<Task[]>([]);
 
+  // Проверяем доступность SQLite при старте
   useEffect(() => {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
-  }, [tasks]);
+    const checkDB = async () => {
+      const available = await taskSync.isDBAvailable();
+      setIsDBAvailable(available);
+      console.log('[useTasks] SQLite database available:', available);
+    };
+    checkDB();
+  }, []);
 
-  // <<< ВОЗВРАЩАЕМ ЭТОТ useEffect К ЕГО ПРОСТОЙ И ОРИГИНАЛЬНОЙ ВЕРСИИ >>>
+  // Загрузка и синхронизация задач
   useEffect(() => {
-    if (legalEntities.length === 0) return;
+    if (legalEntities.length === 0) {
+      setIsInitialized(true);
+      return;
+    }
 
-    // Генератор теперь сам знает, как правильно обработать каждого клиента, используя его `createdAt`
-    const expectedAutoTasks = legalEntities.flatMap(le => generateTasksForLegalEntity(le));
-
-    setTasks(currentTasks => {
-      const manualTasks = currentTasks.filter(t => !t.isAutomatic);
-      const existingAutoTasksMap = new Map<string, Task>();
-      currentTasks.forEach(t => {
-        if (t.isAutomatic && t.id) {
-          existingAutoTasksMap.set(t.id, t);
+    const syncTasks = async () => {
+      if (isDBAvailable) {
+        // SQLite доступен — синхронизируем через базу
+        console.log('[useTasks] Syncing tasks via SQLite...');
+        const syncedTasks = await taskSync.syncAllTasks(legalEntities);
+        setTasks(updateTaskStatuses(syncedTasks));
+      } else {
+        // Fallback на localStorage + генератор
+        console.log('[useTasks] SQLite not available, using generator + localStorage');
+        const savedTasks = localStorage.getItem('tasks');
+        let existingTasks: Task[] = [];
+        if (savedTasks) {
+          const parsedTasks = JSON.parse(savedTasks);
+          const validStatuses = Object.values(TaskStatus);
+          existingTasks = parsedTasks.map((task: any) => {
+            if (!task.status || !validStatuses.includes(task.status)) {
+              task.status = TaskStatus.Upcoming;
+            }
+            return { ...task, dueDate: new Date(task.dueDate) };
+          });
         }
-      });
-      const updatedAutoTasks = expectedAutoTasks.map((expectedTask: Task) => {
-        const existingTask = existingAutoTasksMap.get(expectedTask.id);
-        if (existingTask) {
-          // Сохраняем статус, особенно 'Completed'
-          return { ...expectedTask, status: existingTask.status };
-        }
-        return expectedTask;
-      });
-      const allTasks = [...manualTasks, ...updatedAutoTasks];
-      return updateTaskStatuses(allTasks);
-    });
-  }, [legalEntities]); // Зависимость от legalEntities остается, это правильно
 
+        const expectedAutoTasks = legalEntities.flatMap(le => generateTasksForLegalEntity(le));
+        const manualTasks = existingTasks.filter(t => !t.isAutomatic);
+        const existingAutoTasksMap = new Map<string, Task>();
+        existingTasks.forEach(t => {
+          if (t.isAutomatic && t.id) {
+            existingAutoTasksMap.set(t.id, t);
+          }
+        });
+        const updatedAutoTasks = expectedAutoTasks.map((expectedTask: Task) => {
+          const existingTask = existingAutoTasksMap.get(expectedTask.id);
+          if (existingTask) {
+            return { ...expectedTask, status: existingTask.status };
+          }
+          return expectedTask;
+        });
+        const allTasks = [...manualTasks, ...updatedAutoTasks];
+        setTasks(updateTaskStatuses(allTasks));
+      }
+      setIsInitialized(true);
+    };
+
+    syncTasks();
+  }, [legalEntities, isDBAvailable]);
+
+  // Сохранение в localStorage как fallback
   useEffect(() => {
-    // TODO: Переделать уведомления для веб-версии
-  }, [tasks, legalEntityMap]);
+    if (isInitialized && !isDBAvailable) {
+      localStorage.setItem('tasks', JSON.stringify(tasks));
+    }
+  }, [tasks, isInitialized, isDBAvailable]);
 
+  // Периодическое обновление статусов
   useEffect(() => {
     const intervalId = setInterval(() => {
       console.log('Плановая проверка и обновление статусов задач...');
@@ -71,10 +98,13 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
     return () => clearInterval(intervalId);
   }, []);
 
-  const handleSaveTask = (taskData: Omit<Task, 'id' | 'status' | 'isAutomatic' | 'seriesId'>) => {
+  // Сохранение задачи (ручной)
+  const handleSaveTask = useCallback(async (taskData: Omit<Task, 'id' | 'status' | 'isAutomatic' | 'seriesId'>) => {
     let savedTask: Task | undefined;
-    let updatedTasks;
+    let updatedTasks: Task[];
+
     if (taskToEdit && taskToEdit.id) {
+      // Редактирование
       updatedTasks = tasks.map(t => {
         if (t.id === taskToEdit.id) {
           savedTask = { ...t, ...taskData, reminder: taskData.reminder };
@@ -82,7 +112,18 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
         }
         return t;
       });
+
+      // Обновляем в БД если доступна
+      if (isDBAvailable && savedTask) {
+        await taskStorage.updateTask(savedTask.id, {
+          currentDueDate: new Date(savedTask.dueDate).toISOString().split('T')[0],
+          assignedToId: typeof savedTask.assignedTo === 'string' && savedTask.assignedTo !== 'shared'
+            ? savedTask.assignedTo
+            : null,
+        });
+      }
     } else {
+      // Новая задача
       const newTask: Task = {
         id: `task-${Date.now()}`,
         status: TaskStatus.Upcoming,
@@ -91,40 +132,63 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
       };
       savedTask = newTask;
       updatedTasks = [...tasks, newTask];
+
+      // Сохраняем в БД если доступна
+      if (isDBAvailable) {
+        const legalEntity = legalEntityMap.get(taskData.legalEntityId);
+        if (legalEntity) {
+          await taskSync.saveManualTask(newTask, legalEntity);
+        }
+      }
     }
+
     setTasks(updateTaskStatuses(updatedTasks));
-    // TODO: Уведомления для веб-версии
     setIsTaskModalOpen(false);
     setTaskToEdit(null);
-  };
+  }, [tasks, taskToEdit, isDBAvailable, legalEntityMap]);
 
-  const handleToggleComplete = (taskId: string) => {
+  // Переключение статуса выполнения
+  const handleToggleComplete = useCallback(async (taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const isCompleting = task.status !== TaskStatus.Completed;
+
     setTasks(currentTasks => {
-      let targetTask: Task | undefined;
       const newTasks = currentTasks.map(t => {
         if (t.id === taskId) {
           const temporaryStatus = t.status === TaskStatus.Completed
             ? TaskStatus.Upcoming
             : TaskStatus.Completed;
-          targetTask = { ...t, status: temporaryStatus };
-          return targetTask;
+          return { ...t, status: temporaryStatus };
         }
         return t;
       });
-      if (targetTask) {
-        // TODO: Уведомления для веб-версии
-      }
       return updateTaskStatuses(newTasks);
     });
-  };
 
-  const handleDeleteTask = (taskId: string) => {
-    // TODO: Уведомления для веб-версии
+    // Обновляем в БД
+    if (isDBAvailable) {
+      if (isCompleting) {
+        await taskSync.markTaskCompleted(taskId);
+      } else {
+        await taskStorage.reopenTask(taskId);
+      }
+    }
+  }, [tasks, isDBAvailable]);
+
+  // Удаление задачи
+  const handleDeleteTask = useCallback(async (taskId: string) => {
     setTasks(tasks.filter(t => t.id !== taskId));
     setIsTaskDetailModalOpen(false);
-  };
 
-  const handleOpenNewTaskForm = (defaultValues?: Partial<Task>) => {
+    // Удаляем из БД
+    if (isDBAvailable) {
+      await taskSync.removeTask(taskId);
+    }
+  }, [tasks, isDBAvailable]);
+
+  const handleOpenNewTaskForm = useCallback((defaultValues?: Partial<Task>) => {
     const date = defaultValues?.dueDate instanceof Date ? defaultValues.dueDate : new Date();
     const newTaskScaffold: Partial<Task> = {
       dueDate: date,
@@ -133,44 +197,61 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
     setTaskModalDefaultDate(date);
     setTaskToEdit(newTaskScaffold as Task);
     setIsTaskModalOpen(true);
-  };
+  }, []);
 
-  const handleOpenTaskDetail = (tasks: Task[], date: Date) => {
+  const handleOpenTaskDetail = useCallback((tasks: Task[], date: Date) => {
     setTasksForDetailView(tasks);
     setIsTaskDetailModalOpen(true);
-  };
+  }, []);
 
-  const handleEditTaskFromDetail = (task: Task) => {
+  const handleEditTaskFromDetail = useCallback((task: Task) => {
     setIsTaskDetailModalOpen(false);
     setTimeout(() => {
       setTaskToEdit(task);
       setIsTaskModalOpen(true);
     }, 200);
-  };
+  }, []);
 
-  const handleBulkComplete = (taskIds: string[]) => {
+  const handleBulkComplete = useCallback(async (taskIds: string[]) => {
     const updatedTasks = tasks.map(t => {
       if (taskIds.includes(t.id)) {
-        // TODO: Уведомления для веб-версии
         return { ...t, status: TaskStatus.Completed };
       }
       return t;
     });
     setTasks(updateTaskStatuses(updatedTasks));
-  };
 
-  const handleBulkDelete = (taskIds: string[]) => {
+    // Обновляем в БД
+    if (isDBAvailable) {
+      for (const taskId of taskIds) {
+        await taskSync.markTaskCompleted(taskId);
+      }
+    }
+  }, [tasks, isDBAvailable]);
+
+  const handleBulkDelete = useCallback(async (taskIds: string[]) => {
     const idsToDelete = new Set(taskIds);
-    // TODO: Уведомления для веб-версии
     setTasks(prevTasks => prevTasks.filter(task => !idsToDelete.has(task.id)));
-  };
 
-  const handleDeleteTasksForLegalEntity = (legalEntityId: string) => {
-    setTasks(prevTasks => {
-      // TODO: Уведомления для веб-версии
-      return prevTasks.filter(task => task.legalEntityId !== legalEntityId);
-    });
-  };
+    // Удаляем из БД
+    if (isDBAvailable) {
+      for (const taskId of taskIds) {
+        await taskSync.removeTask(taskId);
+      }
+    }
+  }, [isDBAvailable]);
+
+  const handleDeleteTasksForLegalEntity = useCallback(async (legalEntityId: string) => {
+    const tasksToDelete = tasks.filter(task => task.legalEntityId === legalEntityId);
+    setTasks(prevTasks => prevTasks.filter(task => task.legalEntityId !== legalEntityId));
+
+    // Удаляем из БД
+    if (isDBAvailable) {
+      for (const task of tasksToDelete) {
+        await taskSync.removeTask(task.id);
+      }
+    }
+  }, [tasks, isDBAvailable]);
 
   return {
     tasks, isTaskModalOpen, setIsTaskModalOpen, taskToEdit, setTaskToEdit, taskModalDefaultDate,
@@ -180,5 +261,6 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
     handleOpenTaskDetail, handleToggleComplete, handleEditTaskFromDetail, handleDeleteTask, handleBulkComplete,
     handleBulkDelete,
     handleDeleteTasksForLegalEntity,
+    isDBAvailable, // Экспортируем для отладки
   };
 };

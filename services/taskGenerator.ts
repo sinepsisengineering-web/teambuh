@@ -53,11 +53,15 @@ function formatTaskTitle(template: string, year: number, periodIndex: number, pe
     .replace('{lastDayOfMonth}', new Date(year, month + 1, 0).getDate().toString());
 }
 
-function calculateDueDate(year: number, periodIndex: number, rule: TaskRule): Date {
+// Вычисляет ЧИСТУЮ дату по правилу (без переноса)
+function calculateRawDueDate(year: number, periodIndex: number, rule: TaskRule): Date {
   const { day, month, monthOffset, quarterMonthOffset, specialRule } = rule.dateConfig;
+
+  // Для special rule — возвращаем базовую дату (31 декабря), перенос будет в adjustDate
   if (specialRule === 'LAST_WORKING_DAY_OF_YEAR') {
-    return getLastWorkingDayOfYear(year);
+    return new Date(year, 11, 31); // 31 декабря
   }
+
   let targetMonth: number;
   switch (rule.periodicity) {
     case RepeatFrequency.Monthly:
@@ -74,6 +78,20 @@ function calculateDueDate(year: number, periodIndex: number, rule: TaskRule): Da
       return new Date();
   }
   return new Date(year, targetMonth, day);
+}
+
+// Вычисляет ИТОГОВУЮ дату (с переносом)
+function calculateDueDate(year: number, periodIndex: number, rule: TaskRule): Date {
+  const { specialRule } = rule.dateConfig;
+
+  // Для LAST_WORKING_DAY_OF_YEAR — используем специальную функцию
+  if (specialRule === 'LAST_WORKING_DAY_OF_YEAR') {
+    return getLastWorkingDayOfYear(year);
+  }
+
+  // Для остальных — вычисляем чистую дату и применяем перенос
+  const rawDate = calculateRawDueDate(year, periodIndex, rule);
+  return adjustDate(rawDate, rule.dueDateRule);
 }
 
 // ==========================================
@@ -119,8 +137,15 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] =>
         // Пропускаем периоды, которые закончились до создания клиента
         if (periodEndDate < startDate) { continue; }
 
-        const rawDueDate = calculateDueDate(year, periodIndex, rule);
-        const dueDate = adjustDate(rawDueDate, rule.dueDateRule);
+        // ЧИСТАЯ дата по правилу (для original_due_date)
+        const rawDueDate = calculateRawDueDate(year, periodIndex, rule);
+        // ИТОГОВАЯ дата с переносом (для current_due_date)
+        const dueDate = calculateDueDate(year, periodIndex, rule);
+
+        // DEBUG: Логируем если дата была перенесена
+        if (rawDueDate.getTime() !== dueDate.getTime()) {
+          console.log(`[TaskGen] DATE TRANSFER: ${rule.id} - raw=${rawDueDate.toISOString().split('T')[0]}, adjusted=${dueDate.toISOString().split('T')[0]}`);
+        }
 
         // Не создаём задачи с датой раньше создания клиента
         if (dueDate < startDate) { continue; }
@@ -131,7 +156,8 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] =>
           id: `auto-${legalEntity.id}-${rule.id}-${year}-${periodIndex}`,
           legalEntityId: legalEntity.id,
           title,
-          dueDate,
+          originalDueDate: rawDueDate,  // Чистая дата по правилу (25-е)
+          dueDate,                       // Дата после переноса (27-е если выходной)
           status: TaskStatus.Upcoming,
           isAutomatic: true,
           dueDateRule: rule.dueDateRule,

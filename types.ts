@@ -131,7 +131,8 @@ export interface Task {
   legalEntityId: string;
   title: string;
   description?: string;
-  dueDate: Date;
+  dueDate: Date;              // Итоговая дата (после переноса с выходных)
+  originalDueDate?: Date;     // Оригинальная дата по правилу (до переноса)
   dueTime?: string;
   dueDateRule: TaskDueDateRule;
   repeat: RepeatFrequency;
@@ -140,6 +141,16 @@ export interface Task {
   isAutomatic: boolean;
   seriesId?: string;
   isPeriodLocked?: boolean;
+
+  // === НОВЫЕ ПОЛЯ ДЛЯ TasksView ===
+
+  // Привязка к сотруднику: ID сотрудника, 'shared' (общая), null (не распределена)
+  assignedTo?: string | 'shared' | null;
+
+  // Флаги статуса
+  isUrgent?: boolean;      // 🔥 Срочная
+  isBlocked?: boolean;     // ⏸️ Ожидает (заблокирована)
+  blockedReason?: string;  // Причина блокировки
 }
 
 
