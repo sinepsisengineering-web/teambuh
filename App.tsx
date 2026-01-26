@@ -3,10 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Calendar } from './components/Calendar';
-import { ClientList } from './components/ClientList';
 import { Modal } from './components/Modal';
-import { ClientForm } from './components/ClientForm';
-import { ClientDetailCard } from './components/ClientDetailCard';
+import { LegalEntityEditForm } from './components/LegalEntityEditForm';
 import { TaskForm } from './components/TaskForm';
 import { TaskDetailModal } from './components/TaskDetailModal';
 import { TasksView } from './components/TasksView';
@@ -366,7 +364,9 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                 </div>
             </main>
             <Modal isOpen={isLegalEntityModalOpen} onClose={() => { setIsLegalEntityModalOpen(false); setLegalEntityToEdit(null); }} title={legalEntityToEdit ? 'Редактировать юр. лицо' : 'Новое юр. лицо'}>
-                <ClientForm legalEntity={legalEntityToEdit} onSave={handleSaveLegalEntity} onCancel={() => { setIsLegalEntityModalOpen(false); setLegalEntityToEdit(null); }} />
+                {legalEntityToEdit && (
+                    <LegalEntityEditForm legalEntity={legalEntityToEdit} onSave={handleSaveLegalEntity} onCancel={() => { setIsLegalEntityModalOpen(false); setLegalEntityToEdit(null); }} />
+                )}
             </Modal>
             <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title={taskToEdit && taskToEdit.id ? 'Редактировать задачу' : 'Новая задача'}>
                 <TaskForm legalEntities={activeLegalEntities} onSave={handleSaveTask} onCancel={() => { setIsTaskModalOpen(false); setTaskToEdit(null); }} taskToEdit={taskToEdit} defaultDate={taskModalDefaultDate} />
