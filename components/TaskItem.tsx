@@ -37,7 +37,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, clientName, isSelected
 
   const handleDeleteClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    
+
     const isConfirmed = await confirm({
       title: 'Подтверждение удаления',
       message: `Вы уверены, что хотите удалить задачу "${task.title}"?`,
@@ -49,7 +49,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, clientName, isSelected
       onDeleteTask(task.id);
     }
   };
-  
+
   const handleOpenDetailClick = () => {
     // <<< ЗАПРЕЩАЕМ ОТКРЫВАТЬ ДЕТАЛИ ДЛЯ ЗАБЛОКИРОВАННЫХ ЗАДАЧ >>>
     if (isLocked) return;
@@ -75,7 +75,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, clientName, isSelected
         disabled={isLocked || isCompleted}
         className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
       />
-      
+
       <div className="flex-1 min-w-0">
         {/* <<< ДОБАВЛЯЕМ СТИЛИ ДЛЯ ТЕКСТА ЗАБЛОКИРОВАННОЙ ЗАДАЧИ >>> */}
         <p className={`
@@ -87,7 +87,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, clientName, isSelected
         </p>
         <p className="text-sm text-slate-500 truncate">{clientName}</p>
       </div>
-      
+
       <div className="flex items-center gap-3 flex-shrink-0">
         <div className="hidden sm:flex flex-col items-end text-right">
           <p className={`text-sm font-medium ${isLocked ? 'text-slate-500' : finalStatusStyle.text}`}>{task.status}</p>
@@ -95,10 +95,10 @@ export const TaskItem: React.FC<TaskItemProps> = ({ task, clientName, isSelected
             {new Date(task.dueDate).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}
           </p>
         </div>
-        <button 
-          onClick={handleDeleteClick}
-          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-          title="Удалить задачу"
+        <button
+          disabled
+          className="p-2 text-slate-300 cursor-not-allowed rounded-full"
+          title="Удаление временно отключено — в разработке"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

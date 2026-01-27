@@ -73,6 +73,21 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    // Функция перезагрузки данных
+    const reloadData = async () => {
+        try {
+            const [loadedClients, loadedEmployees] = await Promise.all([
+                storage.loadAllClients(),
+                storage.loadAllEmployees()
+            ]);
+            setLegalEntities(loadedClients.map(parseLegalEntity));
+            setEmployees(loadedEmployees);
+            console.log('[App] Data reloaded:', loadedClients.length, 'clients,', loadedEmployees.length, 'employees');
+        } catch (error) {
+            console.error('Failed to reload data:', error);
+        }
+    };
+
     // Загрузка данных с сервера при старте
     useEffect(() => {
         const loadData = async () => {
@@ -80,18 +95,9 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                 // Инициализируем календарные данные (выходные/праздники)
                 const { initializeDateRegistry } = await import('./services/dateRegistry');
                 initializeDateRegistry();
-
-                const [loadedClients, loadedEmployees] = await Promise.all([
-                    storage.loadAllClients(),
-                    storage.loadAllEmployees()
-                ]);
-
-                // Используем только данные с сервера (без dummy)
-                setLegalEntities(loadedClients.map(parseLegalEntity));
-                setEmployees(loadedEmployees);
+                await reloadData();
             } catch (error) {
                 console.error('Failed to load data from server:', error);
-                // Если сервер недоступен — начинаем с пустых данных
                 setLegalEntities([]);
                 setEmployees([]);
             } finally {
@@ -107,6 +113,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
     const [isLegalEntityModalOpen, setIsLegalEntityModalOpen] = useState(false);
     const [legalEntityToEdit, setLegalEntityToEdit] = useState<LegalEntity | null>(null);
     const [navigateToClientId, setNavigateToClientId] = useState<string | null>(null); // Для перехода в ClientsView
+    const [navigateToTasksWithClientId, setNavigateToTasksWithClientId] = useState<string | null>(null); // Для перехода в TasksView с фильтром
 
     // Инициализация сервиса праздников при запуске приложения
     useEffect(() => {
@@ -240,19 +247,10 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
     };
 
     const handleDeleteLegalEntity = (legalEntity: LegalEntity) => {
-        confirm({
-            title: 'Удаление клиента',
-            message: `Вы уверены, что хотите удалить клиента "${legalEntity.name}"? Это действие нельзя отменить.`,
-            confirmText: 'Удалить',
-            cancelText: 'Отмена',
-            type: 'danger',
-            onConfirm: () => {
-                handleDeleteTasksForLegalEntity(legalEntity.id); // Keep this line from original
-                setLegalEntities(prev => prev.filter(le => le.id !== legalEntity.id));
-                setSelectedLegalEntity(null);
-                setActiveView('clients');
-            }
-        });
+        // Архивация уже сделана в ClientsView, здесь только обновляем состояние
+        handleDeleteTasksForLegalEntity(legalEntity.id);
+        setLegalEntities(prev => prev.filter(le => le.id !== legalEntity.id));
+        setSelectedLegalEntity(null);
     };
 
     // --- Handlers for Employees ---
@@ -275,22 +273,9 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
     };
 
     const handleDeleteEmployee = async (employee: Employee) => {
-        const confirmed = await confirm({
-            title: 'Удаление сотрудника',
-            message: `Вы уверены, что хотите удалить сотрудника "${employee.lastName || ''} ${employee.firstName || ''}"?`,
-            confirmButtonText: 'Удалить',
-            confirmButtonClass: 'bg-red-500 hover:bg-red-600 text-white'
-        });
-
-        if (confirmed) {
-            try {
-                await storage.deleteEmployee(employee.id);
-                setEmployees(prev => prev.filter(e => e.id !== employee.id));
-                console.log('[Employee] Deleted:', employee.id);
-            } catch (error) {
-                console.error('Failed to delete employee:', error);
-            }
-        }
+        // Архивация уже сделана в StaffView, здесь только обновляем состояние
+        setEmployees(prev => prev.filter(e => e.id !== employee.id));
+        console.log('[Employee] Archived:', employee.id);
     }; const handleOpenLegalEntityForm = (entity: LegalEntity | null = null) => {
         setLegalEntityToEdit(entity ? { ...entity } : null);
         setIsLegalEntityModalOpen(true);
@@ -321,6 +306,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
             case 'calendar': return <Calendar tasks={tasks} legalEntities={activeLegalEntities} onUpdateTaskStatus={() => { }} onAddTask={(date) => handleOpenNewTaskForm({ dueDate: date })} onOpenDetail={handleOpenTaskDetail} onDeleteTask={handleDeleteTask} />;
             case 'tasks':
                 return <TasksView
+                    key={`${tasksViewKey}-${navigateToTasksWithClientId || ''}`}
                     tasks={tasks}
                     legalEntities={activeLegalEntities}
                     employees={employees}
@@ -331,6 +317,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                         setNavigateToClientId(clientId);
                         setActiveView('clients');
                     }}
+                    initialClientId={navigateToTasksWithClientId}
                 />;
             case 'clients':
                 return <ClientsView
@@ -341,6 +328,12 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                     onArchive={handleArchiveLegalEntity}
                     employees={employees}
                     initialClientId={navigateToClientId || undefined}
+                    onNavigateToTasks={(clientId, month) => {
+                        // Переходим в TasksView с выбранным клиентом
+                        setNavigateToTasksWithClientId(clientId);
+                        setActiveView('tasks');
+                        setTasksViewKey(prev => prev + 1);
+                    }}
                 />;
             case 'staff': return <StaffView
                 employees={employees}
@@ -349,7 +342,8 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                 onDelete={handleDeleteEmployee}
                 confirm={confirm}
             />;
-            case 'archive': return <ArchiveView archivedLegalEntities={archivedLegalEntities} onUnarchive={handleUnarchiveLegalEntity} onDelete={() => { }} />;
+            case 'rules': return <RulesView isSuperAdmin={true} isAdmin={true} />;
+            case 'archive': return <ArchiveView onBack={() => setActiveView('calendar')} onRestoreItem={reloadData} />;
             case 'settings': return <SettingsView />;
             default: return null;
         }

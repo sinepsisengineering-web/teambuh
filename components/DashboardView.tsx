@@ -2,6 +2,7 @@
 // Панель директора — Главная (без Персонал и Клиенты — они в сайдбаре)
 
 import React, { useState } from 'react';
+import { RulesView } from './RulesView';
 
 type DashboardTab = 'main' | 'finance' | 'references' | 'services';
 
@@ -75,6 +76,15 @@ const tabContent: Record<DashboardTab, string> = {
 export const DashboardView: React.FC = () => {
     const [activeTab, setActiveTab] = useState<DashboardTab>('main');
 
+    const renderTabContent = () => {
+        switch (activeTab) {
+            case 'references':
+                return <RulesView isSuperAdmin={true} isAdmin={true} />;
+            default:
+                return <TabPlaceholder title={tabContent[activeTab]} />;
+        }
+    };
+
     return (
         <div className="h-full flex flex-col -m-8">
             {/* Верхняя панель с вкладками */}
@@ -100,10 +110,18 @@ export const DashboardView: React.FC = () => {
             </div>
 
             {/* Контент */}
-            <div className="flex-1 p-6 bg-slate-50">
-                <div className="h-full bg-white rounded-xl border border-slate-200 p-6">
-                    <TabPlaceholder title={tabContent[activeTab]} />
-                </div>
+            <div className="flex-1 p-6 bg-slate-50 overflow-auto">
+                {activeTab === 'references' ? (
+                    // Справочники — без общей рамки
+                    <div className="h-full">
+                        {renderTabContent()}
+                    </div>
+                ) : (
+                    // Остальные вкладки — с общей рамкой
+                    <div className="h-full bg-white rounded-xl border border-slate-200 p-6">
+                        {renderTabContent()}
+                    </div>
+                )}
             </div>
         </div>
     );

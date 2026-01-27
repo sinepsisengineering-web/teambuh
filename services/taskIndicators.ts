@@ -89,6 +89,32 @@ export const getPriorityColor = (dueDate: Date | string, status?: string): strin
     return config ? `${config.bgColorClass} ${config.colorClass}` : 'bg-slate-100 text-slate-500';
 };
 
+/**
+ * Получить CSS-класс для цветной полосы приоритета (насыщенный цвет)
+ * 4 градации по дням до дедлайна (синхронизированы с легендой):
+ * - 5-7 дней: голубой (bg-sky-400)
+ * - 2-4 дня: зелёный (bg-green-500)
+ * - 1 день и сегодня: светло-жёлтый (bg-yellow-300)
+ * - Просрочено: красный (bg-red-500)
+ * - Выполнено: серый (bg-slate-300)
+ */
+export const getPriorityBarColor = (task: TaskIndicatorInput): string => {
+    // Выполнено = серый
+    if (task.status === 'completed') return 'bg-slate-300';
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDate = typeof task.dueDate === 'string' ? new Date(task.dueDate) : new Date(task.dueDate);
+    dueDate.setHours(0, 0, 0, 0);
+
+    const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysUntilDue < 0) return 'bg-red-500';       // Просрочено
+    if (daysUntilDue <= 1) return 'bg-yellow-300';  // 1 день и сегодня
+    if (daysUntilDue <= 4) return 'bg-green-500';   // 2-4 дня
+    return 'bg-sky-400';                             // 5+ дней (голубой)
+};
+
 // ============================================
 // ЦВЕТА ДЛЯ КАЛЕНДАРЯ (черта под датой)
 // ============================================

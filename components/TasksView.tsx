@@ -6,6 +6,8 @@ import { Task, TaskStatus, LegalEntity, Employee } from '../types';
 import { MiniCalendar } from './MiniCalendar';
 import { TaskCompletionModal } from './TaskCompletionModal';
 import { ClientListModal } from './ClientListModal';
+import { useTaskModal } from '../contexts/TaskModalContext';
+import { getPriorityBarColor } from '../services/taskIndicators';
 
 // ============================================
 // ТИПЫ
@@ -27,6 +29,7 @@ interface TasksViewProps {
     onDeleteTask?: (taskId: string) => void;
     onReassignTask?: (taskId: string, newAssigneeId: string | null) => void;
     onNavigateToClient?: (clientId: string) => void; // Переход на страницу клиента
+    initialClientId?: string | null; // Для предустановки фильтра клиента
 }
 
 // Состояние фильтров
@@ -42,23 +45,8 @@ interface FilterState {
 // УТИЛИТЫ
 // ============================================
 
-// Получить цвет приоритета по близости к дедлайну
-const getPriorityColor = (dueDate: Date, status: TaskStatus): string => {
-    if (status === TaskStatus.Completed) return 'bg-slate-100 text-slate-500';
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const due = new Date(dueDate);
-    due.setHours(0, 0, 0, 0);
-
-    const daysUntilDue = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (daysUntilDue < 0) return 'bg-red-100 text-red-700 border-red-300'; // Просрочено
-    if (daysUntilDue === 0) return 'bg-orange-100 text-orange-700 border-orange-300'; // Сегодня
-    if (daysUntilDue <= 2) return 'bg-amber-100 text-amber-700 border-amber-300'; // Скоро
-    if (daysUntilDue <= 7) return 'bg-yellow-100 text-yellow-700 border-yellow-300'; // Приближается
-    return 'bg-green-100 text-green-700 border-green-300'; // Далеко
-};
+// Локальная getStatusIcon остаётся для Task типа
+// Для цвета приоритета используем общую getPriorityBarColor из taskIndicators
 
 // Получить иконку статуса
 const getStatusIcon = (task: Task): string => {
@@ -126,6 +114,7 @@ interface TaskRowProps {
     onMove?: () => void;
     onClientClick?: () => void;
     onEmployeeClick?: () => void;
+    onTaskClick?: () => void;
 }
 
 const TaskRow: React.FC<TaskRowProps> = ({
@@ -139,9 +128,14 @@ const TaskRow: React.FC<TaskRowProps> = ({
     onReassign,
     onMove,
     onClientClick,
-    onEmployeeClick
+    onEmployeeClick,
+    onTaskClick
 }) => {
-    const priorityClass = getPriorityColor(task.dueDate, task.status);
+    // Используем общую функцию для цвета полосы приоритета
+    const priorityClass = getPriorityBarColor({
+        dueDate: task.dueDate,
+        status: task.status === TaskStatus.Completed ? 'completed' : 'pending',
+    });
     const statusIcon = getStatusIcon(task);
     const isCompleted = task.status === TaskStatus.Completed;
     const canMove = !task.isAutomatic || !task.isPeriodLocked;
@@ -150,7 +144,7 @@ const TaskRow: React.FC<TaskRowProps> = ({
         <div className={`flex items-center gap-2 px-3 py-2 border-b border-slate-100 hover:bg-slate-50 transition-colors ${isCompleted ? 'opacity-60' : ''}`}>
             {/* 1. ЦВЕТ — толстая полоска приоритета (18px) */}
             <div
-                className={`rounded ${priorityClass.split(' ')[0]}`}
+                className={`rounded ${priorityClass}`}
                 style={{ width: '18px', minHeight: '48px', alignSelf: 'stretch' }}
             />
 
@@ -179,7 +173,10 @@ const TaskRow: React.FC<TaskRowProps> = ({
                 const subTitle = parenIndex > 0 ? task.title.substring(parenIndex).trim() : null;
 
                 return (
-                    <div className={`flex-1 min-w-0 flex flex-col justify-center ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                    <div
+                        className={`flex-1 min-w-0 flex flex-col justify-center cursor-pointer hover:text-primary ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}
+                        onClick={onTaskClick}
+                    >
                         {/* Строка 1: Основное название */}
                         <div className="text-sm font-medium leading-tight truncate">
                             {mainTitle}
@@ -253,9 +250,9 @@ const TaskRow: React.FC<TaskRowProps> = ({
                     </button>
                 )}
                 <button
-                    onClick={onDelete}
-                    className="w-6 h-6 flex items-center justify-center text-red-400 hover:bg-red-100 rounded transition-colors"
-                    title="Удалить"
+                    disabled
+                    className="w-6 h-6 flex items-center justify-center text-slate-300 cursor-not-allowed rounded transition-colors flex-shrink-0"
+                    title="Удаление временно отключено — в разработке"
                 >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -286,21 +283,17 @@ const TaskLegend: React.FC = () => (
         {/* Цвета */}
         <div className="flex items-center gap-1">
             <span className="text-[9px] font-semibold text-slate-500 mr-1">ЦВЕТ:</span>
-            <div className="flex flex-col items-center w-10">
-                <span className="w-4 h-4 rounded bg-green-500"></span>
-                <span className="text-[8px] text-slate-500">&gt;7 дн</span>
-            </div>
-            <div className="flex flex-col items-center w-10">
-                <span className="w-4 h-4 rounded bg-yellow-500"></span>
-                <span className="text-[8px] text-slate-500">3-7 дн</span>
-            </div>
-            <div className="flex flex-col items-center w-10">
-                <span className="w-4 h-4 rounded bg-amber-500"></span>
-                <span className="text-[8px] text-slate-500">1-2 дн</span>
+            <div className="flex flex-col items-center w-12">
+                <span className="w-4 h-4 rounded bg-sky-400"></span>
+                <span className="text-[8px] text-slate-500">5-7 дн</span>
             </div>
             <div className="flex flex-col items-center w-12">
-                <span className="w-4 h-4 rounded bg-orange-500"></span>
-                <span className="text-[8px] text-slate-500">Сегодня</span>
+                <span className="w-4 h-4 rounded bg-green-500"></span>
+                <span className="text-[8px] text-slate-500">2-4 дн</span>
+            </div>
+            <div className="flex flex-col items-center w-14">
+                <span className="w-4 h-4 rounded bg-yellow-300"></span>
+                <span className="text-[8px] text-slate-500">1-сегодня</span>
             </div>
             <div className="flex flex-col items-center w-12">
                 <span className="w-4 h-4 rounded bg-red-500"></span>
@@ -419,14 +412,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
     onToggleComplete,
     onDeleteTask,
     onReassignTask,
-    onNavigateToClient
+    onNavigateToClient,
+    initialClientId
 }) => {
+    const { openTaskModal } = useTaskModal();
+
     // Состояние фильтров
     const [filters, setFilters] = useState<FilterState>({
         selectedMonth: new Date(),
         selectedDay: null,
         selectedEmployeeId: null,
-        selectedClientId: null,
+        selectedClientId: initialClientId || null,
         showUnassigned: false
     });
 
@@ -508,6 +504,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
         return Array.from(groups.values());
     }, [tasksFiltered, clientMap]);
+
+    // Задачи для календаря (маркеры на днях)
+    const calendarTasks = useMemo(() => {
+        return tasksInMonth.map(t => ({
+            id: t.id,
+            title: t.title,
+            dueDate: new Date(t.dueDate),
+            status: t.status,
+            clientId: t.legalEntityId
+        }));
+    }, [tasksInMonth]);
 
     // Состояние модального окна выполнения
     const [completionModal, setCompletionModal] = useState<{
@@ -737,6 +744,13 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                         onMove={() => console.log('Move group:', group.key)}
                                         onClientClick={() => handleClientCountClick(group)}
                                         onEmployeeClick={() => console.log('Employee:', effectiveAssignee)}
+                                        onTaskClick={() => openTaskModal({
+                                            id: group.baseTask.id,
+                                            title: group.baseTask.title,
+                                            description: group.baseTask.description,
+                                            dueDate: group.baseTask.dueDate,
+                                            status: group.baseTask.status,
+                                        })}
                                     />
                                 );
                             })
@@ -747,26 +761,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
                     <TaskLegend />
                 </div>
 
-                {/* Правая колонка — Фильтры (30%) */}
-                <div className="w-[30%] h-full flex flex-col gap-3">
+                {/* Правая колонка — Фильтры */}
+                <div className="w-72 flex-shrink-0 flex flex-col gap-3">
                     {/* MiniCalendar */}
-                    <div className="bg-white rounded-lg border border-slate-200 p-3">
-                        <MiniCalendar
-                            selectedDate={filters.selectedMonth}
-                            onDateChange={handleMonthChange}
-                            onDayClick={handleDayClick}
-                            highlightedDay={filters.selectedDay?.getDate()}
-                        />
-                        {/* Прозрачная кнопка для клика по названию месяца */}
-                        {filters.selectedDay && (
-                            <button
-                                onClick={handleMonthNameClick}
-                                className="mt-2 w-full text-xs text-primary hover:underline"
-                            >
-                                ← Показать весь месяц
-                            </button>
-                        )}
-                    </div>
+                    <MiniCalendar
+                        tasks={calendarTasks}
+                        selectedDate={filters.selectedMonth}
+                        onDateChange={handleMonthChange}
+                        onDayClick={handleDayClick}
+                        highlightedDay={filters.selectedDay?.getDate()}
+                        onShowFullMonth={handleMonthNameClick}
+                    />
 
                     {/* Клиенты */}
                     <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 min-h-0 overflow-hidden">
@@ -796,7 +801,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         )}
                     </div>
                 </div>
-            </div>
+            </div >
 
             {/* Модальное окно выполнения задач */}
             {
@@ -812,15 +817,17 @@ export const TasksView: React.FC<TasksViewProps> = ({
             }
 
             {/* Модальное окно списка клиентов */}
-            {clientListModal && (
-                <ClientListModal
-                    isOpen={clientListModal.isOpen}
-                    onClose={() => setClientListModal(null)}
-                    onClientClick={handleClientNavigate}
-                    clients={clientListModal.clients}
-                    taskTitle={clientListModal.taskTitle}
-                />
-            )}
+            {
+                clientListModal && (
+                    <ClientListModal
+                        isOpen={clientListModal.isOpen}
+                        onClose={() => setClientListModal(null)}
+                        onClientClick={handleClientNavigate}
+                        clients={clientListModal.clients}
+                        taskTitle={clientListModal.taskTitle}
+                    />
+                )
+            }
         </>
     );
 };

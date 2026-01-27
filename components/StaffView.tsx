@@ -1,11 +1,16 @@
 // components/StaffView.tsx
 // Раздел «Персонал» с тремя вкладками: Список, Детализация, Управление
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ServerDocumentUpload } from './ServerDocumentUpload';
 import { MiniCalendar } from './MiniCalendar';
 import { Input, Select, Label, FormSection, PhoneInput, EmailInput, INNInput, PercentInput, SNILSInput, PassportInput, BankAccountInput, BIKInput, CorrAccountInput, CardNumberInput, SalaryInput } from './FormComponents';
 import { EmployeeAvatar } from './EmployeeAvatar';
+import { ArchiveConfirmModal } from './ArchiveConfirmModal';
+import * as taskStorage from '../services/taskStorageService';
+import { archiveItem } from '../services/storageService';
+import { useTaskModal } from '../contexts/TaskModalContext';
+import { getStatusIcon, getPriorityBarColor } from '../services/taskIndicators';
 
 const SERVER_URL = 'http://localhost:3001';
 
@@ -97,9 +102,97 @@ const StaffListTab: React.FC<{ employees: Employee[], legalEntities: LegalEntity
 
 const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | null, legalEntities: LegalEntity[] }> = ({ employees, employeeId, legalEntities }) => {
     const [selectedEmployee, setSelectedEmployee] = useState(employeeId || (employees.length > 0 ? employees[0].id : ''));
+    const { openTaskModal } = useTaskModal();
 
-    // Фильтруем клиентов, привязанных к выбранному сотруднику
+    // === Состояние задач и фильтров ===
+    const [allTasks, setAllTasks] = useState<taskStorage.StoredTask[]>([]);
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+
+    // Клиенты сотрудника
     const linkedClients = legalEntities.filter(le => le.accountantId === selectedEmployee);
+    const clientMap = useMemo(() => new Map(legalEntities.map(le => [le.id, le])), [legalEntities]);
+
+    // Загрузка задач сотрудника
+    useEffect(() => {
+        if (selectedEmployee) {
+            // Загружаем задачи для всех клиентов этого сотрудника
+            const clientIds = linkedClients.map(c => c.id);
+            if (clientIds.length > 0) {
+                taskStorage.getAllTasks().then(tasks => {
+                    // Фильтруем по клиентам сотрудника или по assignedToId
+                    const employeeTasks = tasks.filter(t =>
+                        clientIds.includes(t.clientId) || t.assignedToId === selectedEmployee
+                    );
+                    setAllTasks(employeeTasks);
+                });
+            } else {
+                setAllTasks([]);
+            }
+        }
+    }, [selectedEmployee, linkedClients.length]);
+
+    // Фильтрация задач по месяцу/дню и клиенту
+    const filteredTasks = useMemo(() => {
+        let tasks = allTasks;
+
+        // Фильтр по месяцу
+        const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+        const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+        tasks = tasks.filter(t => {
+            const due = new Date(t.currentDueDate);
+            return due >= monthStart && due <= monthEnd;
+        });
+
+        // Фильтр по конкретному дню
+        if (selectedDate) {
+            tasks = tasks.filter(t => {
+                const due = new Date(t.currentDueDate);
+                return due.toDateString() === selectedDate.toDateString();
+            });
+        }
+
+        // Фильтр по клиенту
+        if (selectedClientId) {
+            tasks = tasks.filter(t => t.clientId === selectedClientId);
+        }
+
+        // Сортировка по дате
+        return tasks.sort((a, b) =>
+            new Date(a.currentDueDate).getTime() - new Date(b.currentDueDate).getTime()
+        );
+    }, [allTasks, currentMonth, selectedDate, selectedClientId]);
+
+    // Статистика
+    const completedCount = filteredTasks.filter(t => t.status === 'completed').length;
+    const pendingCount = filteredTasks.filter(t => t.status !== 'completed').length;
+
+    // Задачи для календаря (маркеры на днях)
+    const calendarTasks = useMemo(() => {
+        return allTasks.map(t => ({
+            id: t.id,
+            title: t.title,
+            dueDate: new Date(t.currentDueDate),
+            status: t.status as any,
+            clientId: t.clientId
+        }));
+    }, [allTasks]);
+
+    // Подсчёт задач по клиентам
+    const clientsWithTaskCount = linkedClients.map(client => ({
+        ...client,
+        taskCount: allTasks.filter(t => t.clientId === client.id).length
+    }));
+
+    // Рендер иконки статуса
+    const renderStatusIcon = (task: taskStorage.StoredTask) => {
+        return getStatusIcon({
+            dueDate: task.currentDueDate,
+            status: task.status,
+            cyclePattern: task.cyclePattern ?? undefined,
+        });
+    };
 
     return (
         <div className="h-full flex flex-col">
@@ -107,7 +200,11 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
             <div className="flex justify-between items-center mb-4">
                 <select
                     value={selectedEmployee}
-                    onChange={(e) => setSelectedEmployee(e.target.value)}
+                    onChange={(e) => {
+                        setSelectedEmployee(e.target.value);
+                        setSelectedClientId(null);
+                        setSelectedDate(null);
+                    }}
                     className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                     {employees.map(e => (
@@ -125,32 +222,121 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
             {/* Две колонки: 70% / 30% */}
             <div className="flex gap-4 flex-1 min-h-0">
                 {/* Левая колонка — Задачи (70%) */}
-                <div className="w-[70%] flex flex-col gap-3 overflow-y-auto">
-                    {/* TODO: Здесь будут реальные задачи сотрудника, фильтрованные по assigneeId */}
-                    <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-                        <div className="text-center py-8">
-                            <div className="text-3xl mb-2">📋</div>
-                            <div>Задачи сотрудника</div>
-                            <div className="text-xs mt-1">(будут загружены из системы задач)</div>
-                        </div>
+                <div className="w-[70%] flex flex-col bg-white rounded-lg border border-slate-200 overflow-hidden">
+                    {/* Заголовок таблицы */}
+                    <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 border-b border-slate-200 text-[10px] font-semibold text-slate-500 uppercase tracking-wide flex-shrink-0">
+                        <div style={{ width: '18px' }}></div>
+                        <div className="w-8 text-center">Статус</div>
+                        <div className="w-12 text-center">Тип</div>
+                        <div className="flex-1">Задача</div>
+                        <div className="w-10 text-center">Клиент</div>
+                        <div className="w-20 text-center">Срок</div>
+                    </div>
+
+                    {/* Список задач */}
+                    <div className="flex-1 overflow-y-auto">
+                        {filteredTasks.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                                <div className="text-4xl mb-3">📋</div>
+                                <p className="text-sm">Нет задач</p>
+                                <p className="text-xs">
+                                    {selectedDate ? 'на выбранную дату' : selectedClientId ? 'для выбранного клиента' : 'в этом месяце'}
+                                </p>
+                            </div>
+                        ) : (
+                            filteredTasks.map(task => {
+                                const client = clientMap.get(task.clientId);
+                                const dueDate = new Date(task.currentDueDate);
+                                const isCompleted = task.status === 'completed';
+
+                                // Используем общую функцию для цвета полосы
+                                const priorityColor = getPriorityBarColor({
+                                    dueDate: task.currentDueDate,
+                                    status: task.status,
+                                    cyclePattern: task.cyclePattern ?? undefined,
+                                    taskSource: task.taskSource,
+                                    recurrence: task.recurrence,
+                                });
+
+                                return (
+                                    <div
+                                        key={task.id}
+                                        className={`flex items-center gap-2 px-3 py-2 border-b border-slate-100 hover:bg-slate-50 transition-colors ${isCompleted ? 'opacity-60' : ''}`}
+                                    >
+                                        {/* Цвет приоритета */}
+                                        <div
+                                            className={`rounded ${priorityColor}`}
+                                            style={{ width: '18px', minHeight: '40px', alignSelf: 'stretch' }}
+                                        />
+
+                                        {/* Статус */}
+                                        <div className="w-8 text-center text-lg flex-shrink-0">
+                                            {renderStatusIcon(task)}
+                                        </div>
+
+                                        {/* Тип */}
+                                        <div className="w-12 text-center flex-shrink-0 flex flex-col items-center justify-center">
+                                            <div className="text-base">{task.taskSource === 'auto' ? '🤖' : '✍️'}</div>
+                                            <div className="text-sm">{task.cyclePattern && task.cyclePattern !== 'once' ? '🔄' : '1️⃣'}</div>
+                                        </div>
+
+                                        {/* Название — кликабельное */}
+                                        <div
+                                            className={`flex-1 min-w-0 cursor-pointer hover:text-primary ${isCompleted ? 'line-through text-slate-400' : 'text-slate-800'}`}
+                                            onClick={() => openTaskModal({
+                                                id: task.id,
+                                                title: task.title,
+                                                description: task.description ?? undefined,
+                                                dueDate: task.currentDueDate,
+                                                status: task.status,
+                                            })}
+                                        >
+                                            <div className="text-sm font-medium leading-tight truncate">{task.title}</div>
+                                            {task.description && (
+                                                <div className="text-xs text-slate-500 leading-tight truncate">{task.description}</div>
+                                            )}
+                                        </div>
+
+                                        {/* Клиент */}
+                                        <div className="w-10 text-center flex-shrink-0">
+                                            <button
+                                                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-primary/20 text-xs font-bold text-slate-600 hover:text-primary transition-colors"
+                                                title={client?.name || 'Клиент'}
+                                                onClick={() => setSelectedClientId(task.clientId === selectedClientId ? null : task.clientId)}
+                                            >
+                                                1
+                                            </button>
+                                        </div>
+
+                                        {/* Срок */}
+                                        <div className="w-20 text-center flex-shrink-0 text-xs text-slate-500">
+                                            {dueDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
                     </div>
                 </div>
 
-                {/* Правая колонка — Виджеты (30%): Календарь → Клиенты (flex) → Статистика → Финансы */}
-                <div className="w-[30%] flex flex-col gap-2 text-[11px]">
-                    {/* Мини-календарь (auto height) */}
-                    <div className="flex-shrink-0">
-                        <MiniCalendar />
-                    </div>
+                {/* Правая колонка — Виджеты */}
+                <div className="w-72 flex-shrink-0 flex flex-col gap-3">
+                    {/* Мини-календарь */}
+                    <MiniCalendar
+                        tasks={calendarTasks}
+                        selectedDate={selectedDate}
+                        onDayClick={(date) => setSelectedDate(date.toDateString() === selectedDate?.toDateString() ? null : date)}
+                        onDateChange={(date) => setCurrentMonth(date)}
+                        onShowFullMonth={() => setSelectedDate(null)}
+                    />
 
-                    {/* Профиль сотрудника + Клиенты */}
+                    {/* Профиль + Клиенты */}
                     {(() => {
                         const emp = employees.find(e => e.id === selectedEmployee);
                         return (
                             <div className="flex-1 min-h-0 bg-white rounded-lg border border-slate-200 flex flex-col overflow-hidden">
-                                {/* Sticky-заголовок с профилем сотрудника */}
+                                {/* Профиль сотрудника */}
                                 <div className="flex-shrink-0 p-3 border-b border-slate-100 flex items-center gap-3">
-                                    {/* ФИО и роль слева */}
                                     <div className="flex-1 min-w-0">
                                         <div className="font-semibold text-slate-800 text-sm truncate">
                                             {emp?.lastName || 'Сотрудник'} {emp?.firstName || ''}
@@ -159,7 +345,6 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
                                             {emp?.role === 'accountant' ? 'Бухгалтер' : emp?.role === 'admin' ? 'Администратор' : 'Помощник'}
                                         </div>
                                     </div>
-                                    {/* Аватар справа */}
                                     <EmployeeAvatar
                                         employeeId={emp?.id}
                                         name={`${emp?.lastName || ''} ${emp?.firstName || ''}`}
@@ -167,26 +352,40 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
                                     />
                                 </div>
 
-                                {/* Прокручиваемый список клиентов */}
+                                {/* Клиенты — кликабельные для фильтрации */}
                                 <div className="flex-1 overflow-y-auto p-2">
-                                    <h4 className="font-medium text-slate-700 text-xs mb-2">Клиенты ({linkedClients.length})</h4>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h4 className="font-medium text-slate-700 text-xs">Клиенты ({linkedClients.length})</h4>
+                                        {selectedClientId && (
+                                            <button
+                                                onClick={() => setSelectedClientId(null)}
+                                                className="text-[10px] text-primary hover:underline"
+                                            >
+                                                Сбросить
+                                            </button>
+                                        )}
+                                    </div>
                                     {linkedClients.length === 0 ? (
                                         <div className="text-slate-400 text-xs text-center py-4">
                                             Нет привязанных клиентов
                                         </div>
                                     ) : (
                                         <div className="space-y-1">
-                                            {linkedClients.map(client => (
+                                            {clientsWithTaskCount.map(client => (
                                                 <div
                                                     key={client.id}
-                                                    className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors"
+                                                    onClick={() => setSelectedClientId(client.id === selectedClientId ? null : client.id)}
+                                                    className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${client.id === selectedClientId
+                                                        ? 'bg-primary/10 border border-primary/30'
+                                                        : 'bg-slate-50 hover:bg-slate-100'
+                                                        }`}
                                                 >
                                                     <div className="flex-1 min-w-0">
                                                         <div className="text-xs font-medium text-slate-800 truncate">{client.name}</div>
                                                         <div className="text-[10px] text-slate-400">ИНН: {client.inn}</div>
                                                     </div>
-                                                    <div className="text-[10px] text-slate-500">
-                                                        {client.legalForm}
+                                                    <div className="w-5 h-5 rounded-full bg-slate-200 text-[10px] font-bold text-slate-600 flex items-center justify-center">
+                                                        {client.taskCount}
                                                     </div>
                                                 </div>
                                             ))}
@@ -197,51 +396,42 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
                         );
                     })()}
 
-                    {/* Статистика и Финансы - рассчитываем динамически */}
+                    {/* Статистика */}
+                    <div className="flex-shrink-0 bg-white rounded-lg border border-slate-200 p-2">
+                        <h4 className="font-medium text-slate-700 mb-1">Статистика</h4>
+                        <div className="flex justify-between text-slate-600">
+                            <span>Клиентов: <b>{linkedClients.length}</b></span>
+                            <span>Задач: <b>{filteredTasks.length}</b></span>
+                            <span className="text-green-600">✓ <b>{completedCount}</b></span>
+                            <span className="text-orange-500">⏳ <b>{pendingCount}</b></span>
+                        </div>
+                    </div>
+
+                    {/* Финансы */}
                     {(() => {
                         const emp = employees.find(e => e.id === selectedEmployee);
-                        // Базовый тариф 7000₽, если не указан
                         const DEFAULT_TARIFF = 7000;
-                        // Сумма тарифов всех привязанных клиентов
-                        const totalIncome = linkedClients.reduce((sum, client) => {
-                            return sum + (client.tariffPrice || DEFAULT_TARIFF);
-                        }, 0);
-                        // Процент сотрудника (из данных сотрудника, парсим строку в число)
+                        const totalIncome = linkedClients.reduce((sum, client) => sum + (client.tariffPrice || DEFAULT_TARIFF), 0);
                         const employeePercent = parseFloat(emp?.percent || '0') || 0;
-                        // ЗП = доход × процент / 100
                         const salary = Math.round(totalIncome * employeePercent / 100);
 
                         return (
-                            <>
-                                {/* Статистика */}
-                                <div className="flex-shrink-0 bg-white rounded-lg border border-slate-200 p-2">
-                                    <h4 className="font-medium text-slate-700 mb-1">Статистика</h4>
-                                    <div className="flex justify-between text-slate-600">
-                                        <span>Клиентов: <b>{linkedClients.length}</b></span>
-                                        <span>Задач: <b className="text-slate-400">—</b></span>
-                                        <span className="text-green-600">✓ <span className="text-slate-400">—</span></span>
-                                        <span className="text-orange-500">⏳ <span className="text-slate-400">—</span></span>
-                                    </div>
+                            <div className="flex-shrink-0 bg-white rounded-lg border border-slate-200 p-2">
+                                <h4 className="font-medium text-slate-700 mb-1 flex items-center justify-between">
+                                    Финансы
+                                    <span className="text-primary font-bold">{employeePercent}%</span>
+                                </h4>
+                                <div className="flex justify-between text-slate-600">
+                                    <span>Приход: <b>{totalIncome.toLocaleString()}₽</b></span>
+                                    <span className="text-green-600">ЗП: {salary.toLocaleString()}₽</span>
+                                    <button className="text-primary hover:underline">+Премия</button>
                                 </div>
-
-                                {/* Финансы */}
-                                <div className="flex-shrink-0 bg-white rounded-lg border border-slate-200 p-2">
-                                    <h4 className="font-medium text-slate-700 mb-1 flex items-center justify-between">
-                                        Финансы
-                                        <span className="text-primary font-bold">{employeePercent}%</span>
-                                    </h4>
-                                    <div className="flex justify-between text-slate-600">
-                                        <span>Приход: <b>{totalIncome.toLocaleString()}₽</b></span>
-                                        <span className="text-green-600">ЗП: {salary.toLocaleString()}₽</span>
-                                        <button className="text-primary hover:underline">+Премия</button>
-                                    </div>
-                                </div>
-                            </>
+                            </div>
                         );
                     })()}
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
 
@@ -308,6 +498,10 @@ const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDe
     const [showSaveModal, setShowSaveModal] = useState(false);
     const [saveModalType, setSaveModalType] = useState<'confirm' | 'success' | 'error'>('confirm');
     const [isSaving, setIsSaving] = useState(false);
+
+    // Модальное окно увольнения/удаления
+    const [showDismissModal, setShowDismissModal] = useState(false);
+    const [isDismissing, setIsDismissing] = useState(false);
 
     const handleSelectEmployee = (id: string) => { setSelectedEmployee(id); setIsAddingNew(false); setSaveMessage(null); };
     const handleAddNew = () => { setIsAddingNew(true); setSelectedEmployee(null); setNewEmploymentType('staff'); setErrors({}); setSaveMessage(null); };
@@ -707,7 +901,7 @@ const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDe
                             </button>
                             {!isAddingNew && isExisting && currentEmployee && (
                                 <button
-                                    onClick={() => onDelete(currentEmployee)}
+                                    onClick={() => setShowDismissModal(true)}
                                     className="ml-auto px-4 py-2 bg-[var(--color-error-bg)] text-[var(--color-error)] text-sm rounded-lg hover:bg-red-100 transition-colors"
                                 >
                                     {empType === 'staff' ? 'Уволить' : 'Удалить'}
@@ -846,6 +1040,29 @@ const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDe
                     </div>
                 )
             }
+
+            {/* Модальное окно увольнения/удаления */}
+            {currentEmployee && (
+                <ArchiveConfirmModal
+                    isOpen={showDismissModal}
+                    onClose={() => setShowDismissModal(false)}
+                    onConfirm={async () => {
+                        setIsDismissing(true);
+                        try {
+                            // Архивируем вместо удаления
+                            await archiveItem('employees', currentEmployee);
+                            // Вызываем onDelete чтобы обновить состояние в родителе
+                            await onDelete(currentEmployee);
+                            setShowDismissModal(false);
+                        } finally {
+                            setIsDismissing(false);
+                        }
+                    }}
+                    entityType={empType === 'staff' ? 'Сотрудник' : empType === 'selfemployed' ? 'Самозанятый' : 'ИП'}
+                    entityName={`${currentEmployee.lastName || ''} ${currentEmployee.firstName || ''}`}
+                    isLoading={isDismissing}
+                />
+            )}
         </>
     );
 };

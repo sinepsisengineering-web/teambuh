@@ -6,9 +6,12 @@ import { ServerDocumentUpload } from './ServerDocumentUpload';
 import { ContractUpload } from './ContractUpload';
 import { MiniCalendar } from './MiniCalendar';
 import { EmployeeAvatar } from './EmployeeAvatar';
+import { ArchiveConfirmModal } from './ArchiveConfirmModal';
 import { LegalEntity, TaxSystem as GlobalTaxSystem, LegalForm as GlobalLegalForm, Employee, UploadedDocument } from '../types';
 import * as taskStorage from '../services/taskStorageService';
+import { archiveItem } from '../services/storageService';
 import { getStatusIcon as getStatusIconFn } from '../services/taskIndicators';
+import { useTaskModal } from '../contexts/TaskModalContext';
 
 
 // ============================================
@@ -510,10 +513,15 @@ const ClientListTab: React.FC<{
 // ВКЛАДКА ДЕТАЛИЗАЦИЯ
 // ============================================
 
-const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }> = ({ clients, clientId }) => {
+const ClientDetailsTab: React.FC<{
+    clients: Client[],
+    clientId: string | null,
+    onNavigateToTasks?: (clientId: string, month: Date) => void
+}> = ({ clients, clientId, onNavigateToTasks }) => {
     const [selectedClientId, setSelectedClientId] = useState(clientId || (clients[0]?.id || ''));
     const [newComment, setNewComment] = useState('');
     const client = clients.find(c => c.id === selectedClientId) || clients[0];
+    const { openTaskModal } = useTaskModal();
 
     // === Загрузка задач клиента ===
     const [clientTasks, setClientTasks] = useState<taskStorage.StoredTask[]>([]);
@@ -781,8 +789,12 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
 
                 {/* Список задач */}
                 <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 overflow-y-auto">
-                    <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">
-                        Задачи {selectedDate ? (
+                    <h3
+                        className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100 cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => onNavigateToTasks?.(selectedClientId, currentMonth)}
+                        title="Перейти в задачи"
+                    >
+                        Задачи → {selectedDate ? (
                             <span className="text-slate-400 font-normal ml-1">
                                 ({selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })})
                             </span>
@@ -802,10 +814,20 @@ const ClientDetailsTab: React.FC<{ clients: Client[], clientId: string | null }>
                                 const dueDate = new Date(task.currentDueDate);
                                 const isOverdue = dueDate < new Date() && task.status !== 'completed';
                                 return (
-                                    <div key={task.id} className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0">
+                                    <div
+                                        key={task.id}
+                                        className="p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-0"
+                                        onClick={() => openTaskModal({
+                                            id: task.id,
+                                            title: task.title,
+                                            description: task.description ?? undefined,
+                                            dueDate: task.currentDueDate,
+                                            status: task.status,
+                                        })}
+                                    >
                                         <div className="flex items-center gap-1.5">
                                             {renderStatusIcon(task)}
-                                            <span className="flex-1 text-[10px] font-medium text-slate-700 truncate">{task.title}</span>
+                                            <span className="flex-1 text-[10px] font-medium text-slate-700 truncate hover:text-primary">{task.title}</span>
                                             <span className="text-[9px] text-slate-400">
                                                 {dueDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
                                             </span>
@@ -893,6 +915,10 @@ const ClientManageTab: React.FC<{
 
     // Состояние видимости паролей
     const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
+
+    // Модальное окно удаления/архивации клиента
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const togglePasswordVisibility = (id: string) => {
         setVisiblePasswords(prev => {
@@ -1648,12 +1674,7 @@ const ClientManageTab: React.FC<{
                         </button>
                         {isExisting && (
                             <button
-                                onClick={() => {
-                                    const entityToDelete = legalEntities.find(le => le.id === selectedClientId);
-                                    if (entityToDelete) {
-                                        onDelete(entityToDelete);
-                                    }
-                                }}
+                                onClick={() => setShowDeleteModal(true)}
                                 className="px-4 py-2 bg-red-50 text-red-600 text-xs rounded-lg hover:bg-red-100 border border-red-200"
                             >
                                 🗑️ Удалить клиента
@@ -1816,6 +1837,41 @@ const ClientManageTab: React.FC<{
                     </div>
                 )
             }
+
+            {/* Модальное окно удаления/архивации клиента */}
+            {currentClient && (
+                <ArchiveConfirmModal
+                    isOpen={showDeleteModal}
+                    onClose={() => setShowDeleteModal(false)}
+                    onConfirm={async () => {
+                        console.log('[ClientsView] Starting archive...');
+                        const entityToArchive = legalEntities.find(le => le.id === selectedClientId);
+                        console.log('[ClientsView] Entity to archive:', entityToArchive);
+                        if (!entityToArchive) {
+                            console.error('[ClientsView] No entity found!');
+                            return;
+                        }
+                        setIsDeleting(true);
+                        try {
+                            // Архивируем вместо удаления
+                            console.log('[ClientsView] Calling archiveItem...');
+                            await archiveItem('clients', entityToArchive);
+                            console.log('[ClientsView] Archive success, calling onDelete...');
+                            // Вызываем onDelete чтобы обновить состояние в родителе
+                            await onDelete(entityToArchive);
+                            console.log('[ClientsView] onDelete done, closing modal...');
+                            setShowDeleteModal(false);
+                        } catch (error) {
+                            console.error('[ClientsView] Archive error:', error);
+                        } finally {
+                            setIsDeleting(false);
+                        }
+                    }}
+                    entityType="Клиент"
+                    entityName={currentClient.name}
+                    isLoading={isDeleting}
+                />
+            )}
         </div >
     );
 };
@@ -1831,9 +1887,10 @@ interface ClientsViewProps {
     onArchive?: (entity: LegalEntity) => void;
     employees?: Employee[];
     initialClientId?: string; // Для перехода сразу в детализацию клиента
+    onNavigateToTasks?: (clientId: string, month: Date) => void; // Переход в TasksView
 }
 
-export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave, onDelete, onArchive, employees = [], initialClientId }) => {
+export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave, onDelete, onArchive, employees = [], initialClientId, onNavigateToTasks }) => {
     // Если есть initialClientId — сразу открываем details
     const [activeTab, setActiveTab] = useState<ClientTab>(initialClientId ? 'details' : 'list');
     const [selectedClientId, setSelectedClientId] = useState<string | null>(initialClientId || null);
@@ -1880,7 +1937,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
 
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
                 {activeTab === 'list' && <ClientListTab clients={clients} onSelectClient={handleSelectClient} onViewContract={handleViewContract} />}
-                {activeTab === 'details' && <ClientDetailsTab clients={clients} clientId={selectedClientId} />}
+                {activeTab === 'details' && <ClientDetailsTab clients={clients} clientId={selectedClientId} onNavigateToTasks={onNavigateToTasks} />}
                 {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={onSave} onDelete={onDelete} employees={employees} />}
             </div>
 

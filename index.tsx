@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ConfirmationProvider } from './contexts/ConfirmationProvider';
 import { AuthProvider } from './contexts/AuthContext';
+import { TaskModalProvider } from './contexts/TaskModalContext';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -14,7 +15,9 @@ root.render(
   <React.StrictMode>
     <AuthProvider>
       <ConfirmationProvider>
-        <App />
+        <TaskModalProvider>
+          <App />
+        </TaskModalProvider>
       </ConfirmationProvider>
     </AuthProvider>
   </React.StrictMode>

@@ -93,7 +93,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <div className="mt-3 pt-3 border-t border-slate-200 flex justify-between items-center">
                 <div>
                   {!task.isAutomatic && (
-                    <button onClick={() => onDelete(task.id)} className="p-1 text-sm font-semibold text-red-600 hover:text-red-800">
+                    <button disabled title="Удаление временно отключено — в разработке" className="p-1 text-sm font-semibold text-slate-400 cursor-not-allowed">
                       Удалить
                     </button>
                   )}

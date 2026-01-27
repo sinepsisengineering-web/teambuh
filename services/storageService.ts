@@ -146,3 +146,39 @@ export class ServerStorageProvider implements StorageProvider {
 // =============================================
 
 export const storage = new ServerStorageProvider();
+
+// =============================================
+// ФУНКЦИИ АРХИВАЦИИ
+// =============================================
+
+export type ArchiveType = 'clients' | 'employees' | 'rules';
+
+export const archiveItem = async (type: ArchiveType, item: any, tenantId: string = DEFAULT_TENANT): Promise<void> => {
+    const response = await fetch(`${SERVER_URL}/api/${tenantId}/archive/${type}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+    });
+    if (!response.ok) throw new Error('Failed to archive item');
+};
+
+export const restoreItem = async (type: ArchiveType, itemId: string, tenantId: string = DEFAULT_TENANT): Promise<any> => {
+    const response = await fetch(`${SERVER_URL}/api/${tenantId}/archive/${type}/${itemId}/restore`, {
+        method: 'POST'
+    });
+    if (!response.ok) throw new Error('Failed to restore item');
+    return response.json();
+};
+
+export const deleteItemForever = async (type: ArchiveType, itemId: string, tenantId: string = DEFAULT_TENANT): Promise<void> => {
+    const response = await fetch(`${SERVER_URL}/api/${tenantId}/archive/${type}/${itemId}`, {
+        method: 'DELETE'
+    });
+    if (!response.ok) throw new Error('Failed to delete item');
+};
+
+export const loadArchive = async (type: ArchiveType, tenantId: string = DEFAULT_TENANT): Promise<any[]> => {
+    const response = await fetch(`${SERVER_URL}/api/${tenantId}/archive/${type}`);
+    if (!response.ok) throw new Error('Failed to load archive');
+    return response.json();
+};
