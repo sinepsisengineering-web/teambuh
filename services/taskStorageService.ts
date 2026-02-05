@@ -10,6 +10,11 @@ export interface StoredTask {
     title: string;
     description: string | null;
 
+    // Поля из справочника правил (для отображения в модальном окне)
+    fullDescription: string | null;  // Полное описание из правила
+    legalBasis: string | null;       // Основание (ссылка на закон)
+    ruleId: string | null;           // ID правила (для связи со справочником)
+
     taskSource: 'auto' | 'manual';
     recurrence: 'oneTime' | 'cyclic';
     cyclePattern: string | null;
@@ -129,6 +134,9 @@ export const createManyTasks = async (tasks: {
     id: string;
     title: string;
     description?: string | null;
+    fullDescription?: string | null;  // Полное описание из правила
+    legalBasis?: string | null;       // Основание (ссылка на закон)
+    ruleId?: string | null;           // ID правила
     taskSource?: 'auto' | 'manual';
     recurrence?: 'oneTime' | 'cyclic';
     cyclePattern?: string | null;

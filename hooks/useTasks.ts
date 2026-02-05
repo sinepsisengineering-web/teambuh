@@ -30,7 +30,10 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
 
   // Загрузка и синхронизация задач
   useEffect(() => {
+    console.log(`[useTasks] Effect triggered: legalEntities=${legalEntities.length}, isDBAvailable=${isDBAvailable}`);
+
     if (legalEntities.length === 0) {
+      console.log('[useTasks] No legal entities, skipping sync');
       setIsInitialized(true);
       return;
     }
@@ -40,6 +43,7 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
         // SQLite доступен — синхронизируем через базу
         console.log('[useTasks] Syncing tasks via SQLite...');
         const syncedTasks = await taskSync.syncAllTasks(legalEntities);
+        console.log('[useTasks] Received', syncedTasks.length, 'tasks from sync');
         setTasks(updateTaskStatuses(syncedTasks));
       } else {
         // Fallback на localStorage + генератор

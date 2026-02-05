@@ -9,19 +9,31 @@ import { EmployeeAvatar } from './EmployeeAvatar';
 import { ArchiveConfirmModal } from './ArchiveConfirmModal';
 import { LegalEntity, TaxSystem as GlobalTaxSystem, LegalForm as GlobalLegalForm, Employee, UploadedDocument } from '../types';
 import * as taskStorage from '../services/taskStorageService';
-import { archiveItem } from '../services/storageService';
+import { archiveItem, storage } from '../services/storageService';
 import { getStatusIcon as getStatusIconFn } from '../services/taskIndicators';
 import { useTaskModal } from '../contexts/TaskModalContext';
 
+// Импорт справочника типов
+import {
+    LEGAL_FORMS, TAX_SYSTEMS, MONTHS,
+    getLegalFormLabel, getTaxSystemLabel,
+    LegalFormId, TaxSystemId,
+    LEGAL_FORM_OPTIONS, TAX_SYSTEM_OPTIONS,
+    PROFIT_ADVANCE_PERIODICITY_OPTIONS,
+    CLIENT_STATUS_OPTIONS,
+    normalizeLegalForm, normalizeTaxSystem,
+} from '../constants/dictionaries';
 
 // ============================================
 // ТИПЫ
 // ============================================
 
 type ClientTab = 'list' | 'details' | 'manage';
-type TaxSystem = 'osn' | 'usn6' | 'usn15' | 'eshn';
-type LegalForm = 'ooo' | 'ip' | 'ao' | 'zao';
+// Используем ID из справочника (constants/dictionaries.ts)
+type TaxSystem = TaxSystemId;
+type LegalForm = LegalFormId;
 type ClientStatus = 'permanent' | 'onetime';
+
 
 interface Patent {
     id: string;
@@ -85,6 +97,8 @@ interface Client {
     patents?: Patent[];
     // Доступы к сервисам
     credentials?: ServiceCredential[];
+    // Периодичность авансов по прибыли (только для ОСНО, ООО/АО)
+    profitAdvancePeriodicity?: 'monthly' | 'quarterly';
 }
 
 interface Comment {
@@ -222,31 +236,18 @@ const mockComments: Comment[] = [
 // ============================================
 
 const adaptLegalEntityToClient = (le: LegalEntity): Client => {
-    // Конвертация TaxSystem
-    const taxSystemMap: Record<string, TaxSystem> = {
-        'ОСНО': 'osn',
-        'УСН "Доходы"': 'usn6',
-        'УСН "Доходы минус расходы"': 'usn15',
-        'Патент': 'usn6', // Патент показываем как УСН для упрощения
-    };
-
-    // Конвертация LegalForm
-    const legalFormMap: Record<string, LegalForm> = {
-        'ООО': 'ooo',
-        'ИП': 'ip',
-        'АО': 'ao',
-        'ПАО': 'ao',
-        'ЗАО': 'zao',
-    };
+    // Нормализация ID через справочник (поддерживает старые и новые форматы)
+    const normalizedTaxSystem = normalizeTaxSystem(le.taxSystem);
+    const normalizedLegalForm = normalizeLegalForm(le.legalForm);
 
     return {
         id: le.id,
         name: le.name,
-        legalForm: legalFormMap[le.legalForm] || 'ooo',
+        legalForm: normalizedLegalForm,
         inn: le.inn,
         kpp: le.kpp,
         ogrn: le.ogrn,
-        taxSystem: taxSystemMap[le.taxSystem] || 'usn6',
+        taxSystem: normalizedTaxSystem,
         isNdsPayer: le.isNdsPayer,
         ndsPercent: le.ndsValue ? parseInt(le.ndsValue) : undefined,
         hasEmployees: le.hasEmployees,
@@ -296,6 +297,8 @@ const adaptLegalEntityToClient = (le: LegalEntity): Client => {
             login: c.login,
             password: c.password || '',
         })),
+        // Периодичность авансов по прибыли (для ОСНО)
+        profitAdvancePeriodicity: le.profitAdvancePeriodicity,
     };
 };
 
@@ -303,22 +306,20 @@ const adaptLegalEntityToClient = (le: LegalEntity): Client => {
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================
 
-const getTaxSystemLabel = (ts: TaxSystem): string => {
-    switch (ts) {
-        case 'osn': return 'ОСНО';
-        case 'usn6': return 'УСН 6%';
-        case 'usn15': return 'УСН 15%';
-        case 'eshn': return 'ЕСХН';
-    }
+// Используем импортированную getTaxSystemLabel из справочника
+// Оставляем локальную обёртку для совместимости с текущим кодом
+const getTaxSystemLabelLocal = (ts: TaxSystem | string): string => {
+    // Поддержка старых ID (osn, usn6) через нормализацию
+    const normalizedId = normalizeTaxSystem(ts);
+    return getTaxSystemLabel(normalizedId);
 };
 
-const getLegalFormLabel = (lf: LegalForm): string => {
-    switch (lf) {
-        case 'ooo': return 'ООО';
-        case 'ip': return 'ИП';
-        case 'ao': return 'АО';
-        case 'zao': return 'ЗАО';
-    }
+// Используем импортированную getLegalFormLabel из справочника
+// Оставляем локальную обёртку для совместимости с текущим кодом
+const getLegalFormLabelLocal = (lf: LegalForm | string): string => {
+    // Поддержка старых ID (ooo, ip) через нормализацию
+    const normalizedId = normalizeLegalForm(lf);
+    return getLegalFormLabel(normalizedId);
 };
 
 // Используем глобальный MiniCalendar из ./MiniCalendar.tsx
@@ -423,8 +424,28 @@ const PatentsSection: React.FC<{ patents: Patent[]; isIP: boolean }> = ({ patent
 const ClientListTab: React.FC<{
     clients: Client[],
     onSelectClient: (id: string) => void,
-    onViewContract?: (clientId: string, clientName: string) => void
-}> = ({ clients, onSelectClient, onViewContract }) => {
+    onViewContract?: (clientId: string, clientName: string) => void,
+    onDeleteClient?: (clientId: string) => void
+}> = ({ clients, onSelectClient, onViewContract, onDeleteClient }) => {
+    // Модальное окно удаления
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deleteClientId, setDeleteClientId] = useState<string | null>(null);
+    const [deleteClientName, setDeleteClientName] = useState<string>('');
+
+    const handleDeleteClick = (e: React.MouseEvent, clientId: string, clientName: string) => {
+        e.stopPropagation();
+        setDeleteClientId(clientId);
+        setDeleteClientName(clientName);
+        setShowDeleteModal(true);
+    };
+
+    const handleConfirmDelete = () => {
+        if (deleteClientId && onDeleteClient) {
+            onDeleteClient(deleteClientId);
+        }
+        setShowDeleteModal(false);
+        setDeleteClientId(null);
+    };
     return (
         <div className="space-y-2">
             {clients.map(client => (
@@ -502,9 +523,27 @@ const ClientListTab: React.FC<{
                                 <div className="text-xs font-medium text-slate-700">{client.managerName}</div>
                             </div>
                         </div>
+
+                        {/* Кнопка удаления */}
+                        <button
+                            onClick={(e) => handleDeleteClick(e, client.id, client.name)}
+                            className="ml-3 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                            title="Удалить клиента"
+                        >
+                            🗑️
+                        </button>
                     </div>
                 </div>
             ))}
+
+            {/* Модальное окно удаления */}
+            <ArchiveConfirmModal
+                isOpen={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
+                onConfirm={handleConfirmDelete}
+                entityType="Клиент"
+                entityName={deleteClientName}
+            />
         </div>
     );
 };
@@ -516,12 +555,23 @@ const ClientListTab: React.FC<{
 const ClientDetailsTab: React.FC<{
     clients: Client[],
     clientId: string | null,
-    onNavigateToTasks?: (clientId: string, month: Date) => void
-}> = ({ clients, clientId, onNavigateToTasks }) => {
+    onNavigateToTasks?: (clientId: string, month: Date) => void,
+    onDeleteClient?: (clientId: string) => void
+}> = ({ clients, clientId, onNavigateToTasks, onDeleteClient }) => {
     const [selectedClientId, setSelectedClientId] = useState(clientId || (clients[0]?.id || ''));
     const [newComment, setNewComment] = useState('');
     const client = clients.find(c => c.id === selectedClientId) || clients[0];
     const { openTaskModal } = useTaskModal();
+
+    // Модальное окно удаления
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const handleDeleteClick = () => setShowDeleteModal(true);
+    const handleConfirmDelete = () => {
+        if (selectedClientId && onDeleteClient) {
+            onDeleteClient(selectedClientId);
+        }
+        setShowDeleteModal(false);
+    };
 
     // === Загрузка задач клиента ===
     const [clientTasks, setClientTasks] = useState<taskStorage.StoredTask[]>([]);
@@ -625,17 +675,51 @@ const ClientDetailsTab: React.FC<{
                                 <div><span className={labelClass}>Система налогообложения</span><div className={valueClass}>{getTaxSystemLabel(client.taxSystem)}</div></div>
                                 <div><span className={labelClass}>НДС</span><div className={`${valueClass} ${client.isNdsPayer ? 'text-orange-600' : ''}`}>{client.isNdsPayer ? `Да, ${client.ndsPercent || 20}%` : 'Нет'}</div></div>
                                 <div><span className={labelClass}>Сотрудники</span><div className={valueClass}>{client.hasEmployees ? `Да, ${client.employeeCount} чел.` : 'Нет'}</div></div>
+                                {/* Периодичность авансов по прибыли — только для ОСНО (ООО/АО) */}
+                                {client.taxSystem === 'OSNO' && client.legalForm !== 'IP' && (
+                                    <div>
+                                        <span className={labelClass}>Авансы по прибыли</span>
+                                        <div className={valueClass}>
+                                            {client.profitAdvancePeriodicity === 'monthly' ? 'Ежемесячно' :
+                                                client.profitAdvancePeriodicity === 'quarterly' ? 'Ежеквартально' :
+                                                    'Не указано'}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                            {/* 2. Банковские реквизиты */}
-                            {(client.bankName || client.bankAccount) && (
-                                <div className="grid grid-cols-4 gap-3 mb-3 pt-2 border-t border-slate-100">
-                                    {client.bankName && <div><span className={labelClass}>Банк</span><div className={valueClass}>{client.bankName}</div></div>}
-                                    {client.bankAccount && <div><span className={labelClass}>Расчётный счёт</span><div className={valueClass}>{client.bankAccount}</div></div>}
-                                    {client.bik && <div><span className={labelClass}>БИК</span><div className={valueClass}>{client.bik}</div></div>}
-                                    {client.corrAccount && <div><span className={labelClass}>Корр. счёт</span><div className={valueClass}>{client.corrAccount}</div></div>}
+                            {/* 2. Патенты (только для ИП) */}
+                            {client.legalForm === 'IP' && client.patents && client.patents.length > 0 && (
+                                <div className="mb-3 pt-2 border-t border-slate-100">
+                                    <span className={labelClass}>📜 Патенты</span>
+                                    <div className="space-y-2 mt-1">
+                                        {client.patents.map(p => (
+                                            <div key={p.id} className="bg-yellow-50 p-2 rounded border border-yellow-200">
+                                                <div className={valueClass}>{p.name || 'Без названия'}</div>
+                                                <div className="text-[10px] text-slate-500">
+                                                    {new Date(p.startDate).toLocaleDateString()} — {new Date(p.endDate).toLocaleDateString()}
+                                                    {p.duration && ` (${p.duration} мес.)`}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
-                            {/* 3. Адреса */}
+                            {/* 3. Банковские реквизиты */}
+                            {(client.bankName || client.bankAccount) && (
+                                <div className="mb-3 pt-2 border-t border-slate-100">
+                                    {/* Строка 1: Банк + Расчётный счёт */}
+                                    <div className="grid grid-cols-2 gap-3 mb-2">
+                                        {client.bankName && <div><span className={labelClass}>Банк</span><div className={valueClass}>{client.bankName}</div></div>}
+                                        {client.bankAccount && <div><span className={labelClass}>Расчётный счёт</span><div className={valueClass}>{client.bankAccount}</div></div>}
+                                    </div>
+                                    {/* Строка 2: БИК + Корр. счёт */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {client.bik && <div><span className={labelClass}>БИК</span><div className={valueClass}>{client.bik}</div></div>}
+                                        {client.corrAccount && <div><span className={labelClass}>Корр. счёт</span><div className={valueClass}>{client.corrAccount}</div></div>}
+                                    </div>
+                                </div>
+                            )}
+                            {/* 4. Адреса */}
                             {(client.legalAddress || client.actualAddress) && (
                                 <div className="grid grid-cols-2 gap-3 mb-3 pt-2 border-t border-slate-100">
                                     {client.legalAddress && (
@@ -652,7 +736,7 @@ const ClientDetailsTab: React.FC<{
                                     )}
                                 </div>
                             )}
-                            {/* 4. Контакты */}
+                            {/* 5. Контакты */}
                             {client.contacts && client.contacts.length > 0 && (
                                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
                                     {client.contacts.map(contact => (
@@ -821,6 +905,9 @@ const ClientDetailsTab: React.FC<{
                                             id: task.id,
                                             title: task.title,
                                             description: task.description ?? undefined,
+                                            fullDescription: task.fullDescription ?? undefined,
+                                            legalBasis: task.legalBasis ?? undefined,
+                                            clientName: task.clientName ?? undefined,
                                             dueDate: task.currentDueDate,
                                             status: task.status,
                                         })}
@@ -860,7 +947,26 @@ const ClientDetailsTab: React.FC<{
                         </div>
                     </div>
                 </div>
+
+                {/* Кнопка удаления */}
+                {onDeleteClient && (
+                    <button
+                        onClick={handleDeleteClick}
+                        className="w-full px-4 py-2 bg-red-50 text-red-600 text-xs rounded-lg hover:bg-red-100 border border-red-200"
+                    >
+                        🗑️ Удалить клиента
+                    </button>
+                )}
             </div>
+
+            {/* Модальное окно удаления */}
+            <ArchiveConfirmModal
+                isOpen={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
+                onConfirm={handleConfirmDelete}
+                entityType="Клиент"
+                entityName={client?.name || ''}
+            />
         </div>
     );
 };
@@ -875,15 +981,41 @@ const ClientManageTab: React.FC<{
     onSave: (entity: LegalEntity) => void,
     onDelete: (entity: LegalEntity) => void,
     onArchive?: (entity: LegalEntity) => void,
-    employees?: Employee[]
-}> = ({ clients, legalEntities, onSave, onDelete, onArchive, employees = [] }) => {
-    const [selectedClientId, setSelectedClientId] = useState<string | null>(clients[0]?.id || null);
+    employees?: Employee[],
+    initialClientId?: string | null
+}> = ({ clients, legalEntities, onSave, onDelete, onArchive, employees = [], initialClientId }) => {
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(initialClientId || clients[0]?.id || null);
     const [isAddingNew, setIsAddingNew] = useState(false);
-    const [legalForm, setLegalForm] = useState<LegalForm>('ooo');
+    const [legalForm, setLegalForm] = useState<LegalForm>('OOO');
 
-    // Контакты и доступы для редактирования
+    // Синхронизация с родительским компонентом при смене initialClientId
+    React.useEffect(() => {
+        if (initialClientId && initialClientId !== selectedClientId) {
+            setSelectedClientId(initialClientId);
+            setIsAddingNew(false);
+        }
+    }, [initialClientId]);
+
+    // Автосброс на первого клиента если текущий удалён
+    React.useEffect(() => {
+        if (selectedClientId && !clients.find(c => c.id === selectedClientId)) {
+            // Текущий клиент удалён — переключаемся на первого в списке или режим добавления
+            if (clients.length > 0) {
+                setSelectedClientId(clients[0].id);
+            } else {
+                setSelectedClientId(null);
+                setIsAddingNew(true);
+            }
+        }
+    }, [clients, selectedClientId]);
+
+    // Контакты, доступы и патенты для редактирования
     const [editContacts, setEditContacts] = useState<Contact[]>([]);
     const [editCredentials, setEditCredentials] = useState<ServiceCredential[]>([]);
+    const [editPatents, setEditPatents] = useState<Patent[]>([]);
+
+    // Чекбокс "Фактический адрес совпадает с юридическим"
+    const [sameAddress, setSameAddress] = useState(false);
 
     // Полное состояние формы
     const [formData, setFormData] = useState({
@@ -906,6 +1038,8 @@ const ClientManageTab: React.FC<{
     const [ndsPercent, setNdsPercent] = useState('20');
     const [hasEmployees, setHasEmployees] = useState(false);
     const [employeesCount, setEmployeesCount] = useState('');
+    // Периодичность авансов по налогу на прибыль (только для ООО/АО на ОСНО)
+    const [profitAdvancePeriodicity, setProfitAdvancePeriodicity] = useState<'monthly' | 'quarterly'>('quarterly');
 
     // Модальное окно и состояние сохранения
     const [showSaveModal, setShowSaveModal] = useState(false);
@@ -945,7 +1079,7 @@ const ClientManageTab: React.FC<{
         }
 
         // Валидация ИНН
-        const innLength = legalForm === 'ip' ? 12 : 10;
+        const innLength = legalForm === 'IP' ? 12 : 10;
         if (!formData.inn) {
             errors.push('ИНН');
             invalidFields.add('inn');
@@ -955,17 +1089,17 @@ const ClientManageTab: React.FC<{
         }
 
         // ОГРН/ОГРНИП - обязательное
-        const ogrnLength = legalForm === 'ip' ? 15 : 13; // ОГРНИП = 15, ОГРН = 13
+        const ogrnLength = legalForm === 'IP' ? 15 : 13; // ОГРНИП = 15, ОГРН = 13
         if (!formData.ogrn) {
-            errors.push(legalForm === 'ip' ? 'ОГРНИП' : 'ОГРН');
+            errors.push(legalForm === 'IP' ? 'ОГРНИП' : 'ОГРН');
             invalidFields.add('ogrn');
         } else if (formData.ogrn.length !== ogrnLength) {
-            errors.push(legalForm === 'ip' ? `ОГРНИП (${ogrnLength} цифр)` : `ОГРН (${ogrnLength} цифр)`);
+            errors.push(legalForm === 'IP' ? `ОГРНИП (${ogrnLength} цифр)` : `ОГРН (${ogrnLength} цифр)`);
             invalidFields.add('ogrn');
         }
 
         // КПП для организаций (необязательное, но валидируем если заполнено)
-        if (legalForm !== 'ip' && formData.kpp && formData.kpp.length !== 9) {
+        if (legalForm !== 'IP' && formData.kpp && formData.kpp.length !== 9) {
             errors.push('КПП (9 цифр)');
             invalidFields.add('kpp');
         }
@@ -1044,15 +1178,27 @@ const ClientManageTab: React.FC<{
 
         try {
             // 1. Преобразуем TaxSystem из string в enum
+            // Поддержка как новых ID (OSNO), так и старых (osn) через нормализацию
             const taxSystemMapReverse: Record<string, GlobalTaxSystem> = {
+                'OSNO': GlobalTaxSystem.OSNO,
+                'USN6': GlobalTaxSystem.USN_DOHODY,
+                'USN15': GlobalTaxSystem.USN_DOHODY_RASHODY,
+                'ESHN': GlobalTaxSystem.ESHN,
+                'PATENT': GlobalTaxSystem.PATENT,
+                // Обратная совместимость со старыми ID
                 'osn': GlobalTaxSystem.OSNO,
                 'usn6': GlobalTaxSystem.USN_DOHODY,
                 'usn15': GlobalTaxSystem.USN_DOHODY_RASHODY,
-                'eshn': GlobalTaxSystem.PATENT, // Временный маппинг, т.к. ESHN нет в enum
+                'eshn': GlobalTaxSystem.ESHN,
             };
 
             // 2. Преобразуем LegalForm из string в enum
             const legalFormMapReverse: Record<string, GlobalLegalForm> = {
+                'OOO': GlobalLegalForm.OOO,
+                'IP': GlobalLegalForm.IP,
+                'AO': GlobalLegalForm.AO,
+                'ZAO': GlobalLegalForm.ZAO,
+                // Обратная совместимость со старыми ID
                 'ooo': GlobalLegalForm.OOO,
                 'ip': GlobalLegalForm.IP,
                 'ao': GlobalLegalForm.AO,
@@ -1082,6 +1228,13 @@ const ClientManageTab: React.FC<{
                 ndsValue: isNdsPayer ? ndsPercent : undefined,
                 hasEmployees: hasEmployees,
                 employeeCount: hasEmployees ? parseInt(employeesCount) || 0 : undefined,
+                // Периодичность авансов по прибыли (только для ООО/АО на ОСНО)
+                // Используем нормализованные ID из справочника
+                // DEBUG: отладка сохранения
+                ...(console.log('[SAVE DEBUG] legalForm:', legalForm, 'taxSystem:', formData.taxSystem, 'profitAdvancePeriodicity:', profitAdvancePeriodicity) || {}),
+                profitAdvancePeriodicity: (legalForm === 'OOO' || legalForm === 'AO') && formData.taxSystem === 'OSNO'
+                    ? profitAdvancePeriodicity
+                    : undefined,
 
                 // Массивы данных
                 notes: [],
@@ -1091,13 +1244,13 @@ const ClientManageTab: React.FC<{
                     login: c.login,
                     password: c.password
                 })),
-                patents: currentClient?.patents?.map(p => ({
+                patents: editPatents.map(p => ({
                     id: p.id,
                     name: p.name,
                     startDate: p.startDate,
                     endDate: p.endDate,
                     autoRenew: false
-                })) || [],
+                })),
 
                 isArchived: false,
 
@@ -1132,6 +1285,10 @@ const ClientManageTab: React.FC<{
                     email: c.email
                 })),
             };
+
+            // DEBUG: полная отладка объекта перед сохранением
+            console.log('[SAVE DEBUG FULL] entityToSave:', JSON.stringify(entityToSave, null, 2));
+            console.log('[SAVE DEBUG] Saving client:', entityToSave.id, entityToSave.name, 'profitAdvancePeriodicity:', entityToSave.profitAdvancePeriodicity);
 
             // 4. Вызываем реальный метод сохранения из App.tsx
             onSave(entityToSave);
@@ -1174,6 +1331,11 @@ const ClientManageTab: React.FC<{
     // Обновление поля формы
     const updateField = (field: keyof typeof formData, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }));
+
+        // Автоматически включаем НДС для ОСНО (OSNO)
+        if (field === 'taxSystem' && value === 'OSNO') {
+            setIsNdsPayer(true);
+        }
     };
 
     // При смене клиента обновляем данные
@@ -1181,17 +1343,21 @@ const ClientManageTab: React.FC<{
         if (currentClient && !isAddingNew) {
             setEditContacts(currentClient.contacts || []);
             setEditCredentials(currentClient.credentials || []);
+            setEditPatents(currentClient.patents || []);
             setLegalForm(currentClient.legalForm);
             setIsNdsPayer(currentClient.isNdsPayer || false);
             setNdsPercent(String(currentClient.ndsPercent || 20));
             setHasEmployees(currentClient.hasEmployees || false);
             setEmployeesCount(String(currentClient.employeeCount || ''));
+            setProfitAdvancePeriodicity(currentClient.profitAdvancePeriodicity || 'quarterly');
+            // Проверяем совпадают ли адреса
+            setSameAddress(currentClient.legalAddress === currentClient.actualAddress);
             setFormData({
                 name: currentClient.name || '',
                 inn: currentClient.inn || '',
                 kpp: currentClient.kpp || '',
                 ogrn: currentClient.ogrn || '',
-                taxSystem: currentClient.taxSystem || 'usn6',
+                taxSystem: currentClient.taxSystem || 'USN6',
                 status: currentClient.status || 'permanent',
                 tariff: currentClient.tariff?.name || 'Стандарт',
                 accountant: currentClient.managerId || '',
@@ -1205,10 +1371,13 @@ const ClientManageTab: React.FC<{
         } else if (isAddingNew) {
             setEditContacts([]);
             setEditCredentials([]);
+            setEditPatents([]);
+            setSameAddress(false);
             setIsNdsPayer(false);
             setNdsPercent('20');
             setHasEmployees(false);
             setEmployeesCount('');
+            setProfitAdvancePeriodicity('quarterly');
             setFormData({
                 name: '',
                 inn: '',
@@ -1243,6 +1412,7 @@ const ClientManageTab: React.FC<{
         setNdsPercent('20');
         setHasEmployees(false);
         setEmployeesCount('');
+        setProfitAdvancePeriodicity('quarterly');
     };
 
     const handleAddContact = () => {
@@ -1269,13 +1439,35 @@ const ClientManageTab: React.FC<{
         setEditCredentials(editCredentials.filter(c => c.id !== id));
     };
 
+    // --- Патенты ---
+    const handleAddPatent = () => {
+        const today = new Date().toISOString().split('T')[0];
+        const endDate = new Date();
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        setEditPatents([...editPatents, {
+            id: `pat_new_${Date.now()}`,
+            name: '',
+            type: '',
+            startDate: today,
+            endDate: endDate.toISOString().split('T')[0],
+            duration: 12
+        }]);
+    };
+
+    const handleUpdatePatent = (id: string, field: keyof Patent, value: string | number) => {
+        setEditPatents(editPatents.map(p => p.id === id ? { ...p, [field]: value } : p));
+    };
+
+    const handleRemovePatent = (id: string) => {
+        setEditPatents(editPatents.filter(p => p.id !== id));
+    };
+
     // Получение русского названия формы собственности
     const getLegalFormLabel = (form: LegalForm): string => {
         const labels: Record<LegalForm, string> = {
-            ooo: 'ООО',
-            ip: 'ИП',
-            ao: 'АО',
-            zao: 'ЗАО',
+            OOO: 'ООО',
+            IP: 'ИП',
+            AO: 'АО',
         };
         return labels[form] || form;
     };
@@ -1303,16 +1495,24 @@ const ClientManageTab: React.FC<{
 
                     {/* ТИП ЮР. ЛИЦА */}
                     <div className={sectionClass}>
-                        <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Тип юридического лица</div>
+                        <div className="flex items-center gap-2">
+                            <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Тип юридического лица</div>
+                            {!isAddingNew && (
+                                <span className="text-[9px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                                    🔒 Нельзя изменить
+                                </span>
+                            )}
+                        </div>
                         <div className="flex gap-2">
-                            {(['ooo', 'ip', 'ao', 'zao'] as LegalForm[]).map(lf => (
+                            {(['OOO', 'IP', 'AO'] as LegalForm[]).map(lf => (
                                 <button
                                     key={lf}
                                     onClick={() => setLegalForm(lf)}
+                                    disabled={!isAddingNew}
                                     className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${legalForm === lf
                                         ? 'bg-primary text-white border-primary'
                                         : 'bg-white text-slate-600 border-slate-200 hover:border-primary/50'
-                                        }`}
+                                        } ${!isAddingNew ? 'opacity-60 cursor-not-allowed' : ''}`}
                                 >
                                     {getLegalFormLabel(lf)}
                                 </button>
@@ -1325,28 +1525,28 @@ const ClientManageTab: React.FC<{
                         <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Основные данные</div>
                         <div className="grid grid-cols-4 gap-3">
                             <div className="col-span-2">
-                                <label className={labelClass}>{legalForm === 'ip' ? 'ФИО предпринимателя' : 'Название организации'} *</label>
-                                <input type="text" className={getFieldClass('name')} value={formData.name} onChange={(e) => updateField('name', e.target.value)} placeholder={legalForm === 'ip' ? 'Иванов Иван Иванович' : 'Название без ООО/ЗАО'} />
+                                <label className={labelClass}>{legalForm === 'IP' ? 'ФИО предпринимателя' : 'Название организации'} *</label>
+                                <input type="text" className={getFieldClass('name')} value={formData.name} onChange={(e) => updateField('name', e.target.value)} placeholder={legalForm === 'IP' ? 'Иванов Иван Иванович' : 'Название без ООО/АО'} />
                             </div>
                             <div>
                                 <label className={labelClass}>ИНН *</label>
-                                <input type="text" className={getFieldClass('inn')} value={formData.inn} onChange={(e) => updateField('inn', onlyDigits(e.target.value, legalForm === 'ip' ? 12 : 10))} placeholder={legalForm === 'ip' ? '123456789012' : '1234567890'} />
+                                <input type="text" className={getFieldClass('inn')} value={formData.inn} onChange={(e) => updateField('inn', onlyDigits(e.target.value, legalForm === 'IP' ? 12 : 10))} placeholder={legalForm === 'IP' ? '123456789012' : '1234567890'} />
                             </div>
-                            {legalForm !== 'ip' && (
+                            {legalForm !== 'IP' && (
                                 <div>
                                     <label className={labelClass}>КПП</label>
                                     <input type="text" className={getFieldClass('kpp')} value={formData.kpp} onChange={(e) => updateField('kpp', onlyDigits(e.target.value, 9))} placeholder="123456789" />
                                 </div>
                             )}
                         </div>
-                        <div className="grid grid-cols-4 gap-3">
-                            {legalForm !== 'ip' && (
+                        <div className="grid grid-cols-2 gap-3">
+                            {legalForm !== 'IP' && (
                                 <div>
                                     <label className={labelClass}>ОГРН *</label>
                                     <input type="text" className={getFieldClass('ogrn')} value={formData.ogrn} onChange={(e) => updateField('ogrn', onlyDigits(e.target.value, 13))} placeholder="1234567890123" />
                                 </div>
                             )}
-                            {legalForm === 'ip' && (
+                            {legalForm === 'IP' && (
                                 <div>
                                     <label className={labelClass}>ОГРНИП *</label>
                                     <input type="text" className={getFieldClass('ogrn')} value={formData.ogrn} onChange={(e) => updateField('ogrn', onlyDigits(e.target.value, 15))} placeholder="323456789012345" />
@@ -1356,55 +1556,69 @@ const ClientManageTab: React.FC<{
                                 <label className={labelClass}>Система налогообложения *</label>
                                 <select className={getFieldClass('taxSystem')} value={formData.taxSystem} onChange={(e) => updateField('taxSystem', e.target.value)}>
                                     <option value="">Выберите...</option>
-                                    <option value="osn">ОСНО</option>
-                                    <option value="usn6">УСН 6%</option>
-                                    <option value="usn15">УСН 15%</option>
-                                    <option value="eshn">ЕСХН</option>
+                                    <option value="OSNO">ОСНО</option>
+                                    <option value="USN6">УСН 6%</option>
+                                    <option value="USN15">УСН 15%</option>
+                                    <option value="ESHN">ЕСХН</option>
+                                    <option value="PATENT">Патент</option>
                                 </select>
                             </div>
-                            <div className="flex items-end gap-2">
-                                <label className="flex items-center gap-1 text-xs whitespace-nowrap">
-                                    <input
-                                        type="checkbox"
-                                        className="rounded"
-                                        checked={isNdsPayer}
-                                        onChange={(e) => setIsNdsPayer(e.target.checked)}
-                                    />
-                                    Плательщик НДС
-                                </label>
+                        </div>
+                        {/* Чекбоксы в отдельной строке для лучшего выравнивания */}
+                        <div className="flex flex-wrap items-center gap-4 mt-2">
+                            <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                                <input
+                                    type="checkbox"
+                                    className="rounded w-4 h-4"
+                                    checked={isNdsPayer}
+                                    onChange={(e) => setIsNdsPayer(e.target.checked)}
+                                />
+                                Плательщик НДС
                                 {isNdsPayer && (
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center gap-1 ml-1">
                                         <input
                                             type="text"
-                                            className="w-14 px-2 py-1.5 text-xs border border-slate-200 rounded text-center"
+                                            className="w-10 px-1 py-0.5 text-xs border border-slate-200 rounded text-center"
                                             value={ndsPercent}
                                             onChange={(e) => setNdsPercent(onlyDigits(e.target.value, 2))}
                                             placeholder="20"
                                         />
-                                        <span className="text-xs text-slate-500">%</span>
+                                        <span className="text-slate-500">%</span>
                                     </div>
                                 )}
-                            </div>
-                            <div className="flex items-end gap-2">
-                                <label className="flex items-center gap-1 text-xs whitespace-nowrap">
-                                    <input
-                                        type="checkbox"
-                                        className="rounded"
-                                        checked={hasEmployees}
-                                        onChange={(e) => setHasEmployees(e.target.checked)}
-                                    />
-                                    Есть сотрудники
-                                </label>
+                            </label>
+                            <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                                <input
+                                    type="checkbox"
+                                    className="rounded w-4 h-4"
+                                    checked={hasEmployees}
+                                    onChange={(e) => setHasEmployees(e.target.checked)}
+                                />
+                                Есть сотрудники
                                 {hasEmployees && (
                                     <input
                                         type="text"
-                                        className="w-16 px-2 py-1.5 text-xs border border-slate-200 rounded text-center"
+                                        className="w-12 px-1 py-0.5 text-xs border border-slate-200 rounded text-center ml-1"
                                         value={employeesCount}
                                         onChange={(e) => setEmployeesCount(onlyDigits(e.target.value, 5))}
                                         placeholder="кол-во"
                                     />
                                 )}
-                            </div>
+                            </label>
+                            {/* Периодичность авансов по налогу на прибыль — только для ООО/АО на ОСНО */}
+                            {(legalForm === 'OOO' || legalForm === 'AO') && formData.taxSystem === 'OSNO' && (
+                                <div className="flex items-center gap-1.5 text-xs">
+                                    <span className="text-slate-600">Авансы по прибыли:</span>
+                                    <select
+                                        className="px-2 py-0.5 text-xs border border-slate-200 rounded"
+                                        value={profitAdvancePeriodicity}
+                                        onChange={(e) => setProfitAdvancePeriodicity(e.target.value as 'monthly' | 'quarterly')}
+                                    >
+                                        <option value="quarterly">Ежеквартально</option>
+                                        <option value="monthly">Ежемесячно</option>
+                                    </select>
+                                </div>
+                            )}
                         </div>
                         <div className="grid grid-cols-4 gap-3">
                             <div>
@@ -1445,6 +1659,79 @@ const ClientManageTab: React.FC<{
                         </div>
                     </div>
 
+                    {/* ПАТЕНТЫ (только для ИП) */}
+                    {legalForm === 'IP' && (
+                        <div className={sectionClass}>
+                            <div className="flex justify-between items-center">
+                                <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">📜 Патенты</div>
+                                <button
+                                    type="button"
+                                    onClick={handleAddPatent}
+                                    className="text-[10px] text-primary hover:underline"
+                                >
+                                    + Добавить патент
+                                </button>
+                            </div>
+                            {editPatents.length > 0 ? (
+                                <div className="space-y-3">
+                                    {editPatents.map(p => (
+                                        <div key={p.id} className="bg-yellow-50 p-3 rounded border border-yellow-200">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <input
+                                                    type="text"
+                                                    value={p.name}
+                                                    onChange={(e) => handleUpdatePatent(p.id, 'name', e.target.value)}
+                                                    placeholder="Название патента"
+                                                    className="flex-1 px-2 py-1 text-xs border border-slate-200 rounded focus:border-primary focus:ring-1 focus:ring-primary"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemovePatent(p.id)}
+                                                    className="ml-2 text-red-500 hover:text-red-700 text-xs"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500 mb-1">Дата начала</div>
+                                                    <input
+                                                        type="date"
+                                                        value={p.startDate}
+                                                        onChange={(e) => handleUpdatePatent(p.id, 'startDate', e.target.value)}
+                                                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:border-primary"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500 mb-1">Дата окончания</div>
+                                                    <input
+                                                        type="date"
+                                                        value={p.endDate}
+                                                        onChange={(e) => handleUpdatePatent(p.id, 'endDate', e.target.value)}
+                                                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:border-primary"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <div className="text-[9px] text-slate-500 mb-1">Срок (мес.)</div>
+                                                    <input
+                                                        type="number"
+                                                        value={p.duration}
+                                                        onChange={(e) => handleUpdatePatent(p.id, 'duration', parseInt(e.target.value) || 0)}
+                                                        min="1"
+                                                        max="12"
+                                                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:border-primary"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-xs text-slate-400 text-center py-2">Патенты не добавлены</div>
+                            )}
+                        </div>
+                    )}
+
                     {/* АДРЕСА */}
                     <div className={sectionClass}>
                         <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Адреса</div>
@@ -1454,8 +1741,29 @@ const ClientManageTab: React.FC<{
                                 <input type="text" className={getFieldClass('legalAddress')} value={formData.legalAddress} onChange={(e) => updateField('legalAddress', e.target.value)} placeholder="г. Москва, ул. ..." />
                             </div>
                             <div>
-                                <label className={labelClass}>Фактический адрес</label>
-                                <input type="text" className={inputClass} value={formData.actualAddress} onChange={(e) => updateField('actualAddress', e.target.value)} placeholder="г. Москва, ул. ..." />
+                                <div className="flex items-center gap-2 mb-1">
+                                    <input
+                                        type="checkbox"
+                                        id="sameAddress"
+                                        checked={sameAddress}
+                                        onChange={(e) => {
+                                            setSameAddress(e.target.checked);
+                                            if (e.target.checked) {
+                                                updateField('actualAddress', formData.legalAddress);
+                                            }
+                                        }}
+                                        className="w-3 h-3"
+                                    />
+                                    <label htmlFor="sameAddress" className="text-[10px] text-slate-500 cursor-pointer">Совпадает с юридическим</label>
+                                </div>
+                                <input
+                                    type="text"
+                                    className={inputClass}
+                                    value={sameAddress ? formData.legalAddress : formData.actualAddress}
+                                    onChange={(e) => updateField('actualAddress', e.target.value)}
+                                    placeholder="г. Москва, ул. ..."
+                                    disabled={sameAddress}
+                                />
                             </div>
                         </div>
                     </div>
@@ -1463,7 +1771,8 @@ const ClientManageTab: React.FC<{
                     {/* БАНКОВСКИЕ РЕКВИЗИТЫ */}
                     <div className={sectionClass}>
                         <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">Банковские реквизиты</div>
-                        <div className="grid grid-cols-4 gap-3">
+                        {/* Строка 1: Банк + Расчётный счёт */}
+                        <div className="grid grid-cols-2 gap-3 mb-3">
                             <div>
                                 <label className={labelClass}>Название банка *</label>
                                 <input type="text" className={getFieldClass('bankName')} value={formData.bankName} onChange={(e) => updateField('bankName', e.target.value)} placeholder="Сбербанк" />
@@ -1472,6 +1781,9 @@ const ClientManageTab: React.FC<{
                                 <label className={labelClass}>Расчётный счёт *</label>
                                 <input type="text" className={getFieldClass('bankAccount')} value={formData.bankAccount} onChange={(e) => updateField('bankAccount', onlyDigits(e.target.value, 20))} placeholder="40702810..." />
                             </div>
+                        </div>
+                        {/* Строка 2: БИК + Корр. счёт */}
+                        <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className={labelClass}>БИК *</label>
                                 <input type="text" className={getFieldClass('bik')} value={formData.bik} onChange={(e) => updateField('bik', onlyDigits(e.target.value, 9))} placeholder="044525225" />
@@ -1612,33 +1924,6 @@ const ClientManageTab: React.FC<{
                             </div>
                         )}
                     </div>
-
-                    {/* ПАТЕНТЫ (только для ИП) */}
-                    {legalForm === 'ip' && (
-                        <div className={sectionClass}>
-                            <div className="flex justify-between items-center">
-                                <div className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide">📜 Патенты</div>
-                                <button className="text-[10px] text-primary hover:underline">+ Добавить патент</button>
-                            </div>
-                            {isExisting && currentClient.patents && currentClient.patents.length > 0 ? (
-                                <div className="space-y-2">
-                                    {currentClient.patents.map(p => (
-                                        <div key={p.id} className="bg-yellow-50 p-2 rounded border border-yellow-200 flex justify-between items-center">
-                                            <div>
-                                                <div className="text-xs font-medium text-slate-700">{p.name}</div>
-                                                <div className="text-[10px] text-slate-500">{p.type} • {p.duration} мес.</div>
-                                            </div>
-                                            <div className="text-[10px] text-slate-400">
-                                                {new Date(p.startDate).toLocaleDateString()} — {new Date(p.endDate).toLocaleDateString()}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="text-xs text-slate-400 text-center py-2">Патенты не добавлены</div>
-                            )}
-                        </div>
-                    )}
 
                     {/* ДОГОВОР */}
                     <div className={sectionClass}>
@@ -1872,7 +2157,7 @@ const ClientManageTab: React.FC<{
                     isLoading={isDeleting}
                 />
             )}
-        </div >
+        </div>
     );
 };
 
@@ -1910,6 +2195,22 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
         setContractPreview({ clientId, clientName });
     };
 
+    // Удаление клиента из списка (архивация через DELETE API)
+    const handleDeleteFromList = async (clientId: string) => {
+        try {
+            // Вызываем DELETE API который архивирует клиента в SQLite
+            await storage.deleteClient(clientId);
+
+            // Обновляем локальный state — клиент станет архивным
+            const entity = legalEntities.find(le => le.id === clientId);
+            if (entity) {
+                onDelete({ ...entity, isArchived: true });
+            }
+        } catch (error) {
+            console.error('[ClientsView] Failed to archive client:', error);
+        }
+    };
+
     const tabs = [
         { id: 'list' as const, label: 'Список' },
         { id: 'details' as const, label: 'Детализация' },
@@ -1936,9 +2237,9 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
             </div>
 
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
-                {activeTab === 'list' && <ClientListTab clients={clients} onSelectClient={handleSelectClient} onViewContract={handleViewContract} />}
-                {activeTab === 'details' && <ClientDetailsTab clients={clients} clientId={selectedClientId} onNavigateToTasks={onNavigateToTasks} />}
-                {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={onSave} onDelete={onDelete} employees={employees} />}
+                {activeTab === 'list' && <ClientListTab clients={clients} onSelectClient={handleSelectClient} onViewContract={handleViewContract} onDeleteClient={handleDeleteFromList} />}
+                {activeTab === 'details' && <ClientDetailsTab clients={clients} clientId={selectedClientId} onNavigateToTasks={onNavigateToTasks} onDeleteClient={handleDeleteFromList} />}
+                {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={onSave} onDelete={onDelete} employees={employees} initialClientId={selectedClientId} />}
             </div>
 
             {/* Модалка просмотра договора из списка */}

@@ -748,6 +748,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                             id: group.baseTask.id,
                                             title: group.baseTask.title,
                                             description: group.baseTask.description,
+                                            fullDescription: group.baseTask.fullDescription,
+                                            legalBasis: group.baseTask.legalBasis,
+                                            clientName: group.clients.map(c => c.name).join(', '),
                                             dueDate: group.baseTask.dueDate,
                                             status: group.baseTask.status,
                                         })}

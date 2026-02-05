@@ -272,3 +272,23 @@ export const getHolidayStatus = (): { currentYear: boolean; nextYear: boolean } 
         nextYear: cache[nextYear]?.isDownloaded ?? false,
     };
 };
+
+/**
+ * Получить массив годов с загруженным производственным календарём
+ * Возвращает ТОЛЬКО те года, для которых календарь реально загружен через API
+ */
+export const getAvailableCalendarYears = (): number[] => {
+    const cache = loadCache();
+    const years: number[] = [];
+
+    // Собираем все года с загруженным календарём
+    for (const yearStr of Object.keys(cache)) {
+        const year = parseInt(yearStr, 10);
+        if (!isNaN(year) && cache[year]?.isDownloaded) {
+            years.push(year);
+        }
+    }
+
+    // Сортируем по возрастанию
+    return years.sort((a, b) => a - b);
+};

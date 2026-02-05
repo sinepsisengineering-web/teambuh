@@ -2,8 +2,9 @@
 // Унифицированный сервис для работы с правилами задач (SQLite через API)
 // Заменяет customRulesService.ts для работы с новой единой таблицей
 
-import { TaskRule, RuleCategory, TaskType, DateCalculationConfig } from './taskRules';
-import { RepeatFrequency, TaskDueDateRule, LegalEntity } from '../types';
+import { TaskRule, RuleCategory, TaskType, DateCalculationConfig, RepeatFrequency, TaskDueDateRule, LegalEntity } from '../types';
+// Импорт справочника типов для нормализации ID
+import { normalizeLegalForm, normalizeTaxSystem } from '../constants/dictionaries';
 
 // API конфигурация
 const SERVER_URL = 'http://localhost:3001';
@@ -43,6 +44,8 @@ export interface DbRule {
         requiresEmployees: boolean;
         requiresNds: boolean;
         clientIds: string[] | null;
+        // Периодичность авансов по прибыли: 'monthly' | 'quarterly' | null (для любой)
+        profitAdvancePeriodicity?: 'monthly' | 'quarterly' | null;
     };
 
     excludeMonths: number[] | null;
@@ -65,6 +68,29 @@ export interface SyncResponse {
  * Данные для создания правила
  */
 export type CreateRuleData = Omit<DbRule, 'id' | 'source' | 'createdAt' | 'updatedAt' | 'version'>;
+
+// Alias для совместимости с customRulesService
+export type CustomRule = DbRule;
+export type CreateCustomRule = CreateRuleData;
+
+// ==========================================
+// КОНСТАНТЫ ДЛЯ UI
+// ==========================================
+
+export const PERIODICITY_OPTIONS = [
+    { value: 'daily', label: 'Ежедневно' },
+    { value: 'weekly', label: 'Еженедельно' },
+    { value: 'biweekly', label: 'Раз в 2 недели' },
+    { value: 'monthly', label: 'Ежемесячно' },
+    { value: 'quarterly', label: 'Ежеквартально' },
+    { value: 'yearly', label: 'Ежегодно' },
+];
+
+export const DUE_DATE_RULE_OPTIONS = [
+    { value: 'next_business_day', label: 'Перенос на след. рабочий день' },
+    { value: 'previous_business_day', label: 'Перенос на пред. рабочий день' },
+    { value: 'no_transfer', label: 'Без переноса' },
+];
 
 // ==========================================
 // API КЛИЕНТ
@@ -180,13 +206,44 @@ export const convertToTaskRule = (dbRule: DbRule): TaskRule => {
 
     // Создаём функцию appliesTo на основе декларативных полей
     const appliesTo = (entity: LegalEntity): boolean => {
+        // Нормализуем ID клиента для корректного сравнения
+        // (поддержка как старых ООО/ОСНО, так и новых OOO/OSNO форматов)
+        const entityLegalForm = normalizeLegalForm(entity.legalForm);
+        const entityTaxSystem = normalizeTaxSystem(entity.taxSystem);
+
+        // Проверка периодичности авансов по прибыли
+        // Используем ТОЛЬКО явно заданное поле из applicabilityConfig
+        // НЕ определяем автоматически по названию правила!
+        const requiredPeriodicity = applicabilityConfig.profitAdvancePeriodicity;
+
+        if (requiredPeriodicity) {
+            // Правило требует определённую периодичность авансов
+            if (entity.profitAdvancePeriodicity !== requiredPeriodicity) {
+                return false;
+            }
+        }
+
+        // Вспомогательная функция для проверки legalForms с нормализацией
+        const checkLegalForms = (forms: string[]): boolean => {
+            // Нормализуем все формы из правила и сравниваем с нормализованной формой клиента
+            const normalizedForms = forms.map(f => normalizeLegalForm(f));
+            return normalizedForms.includes(entityLegalForm);
+        };
+
+        // Вспомогательная функция для проверки taxSystems с нормализацией
+        const checkTaxSystems = (systems: string[]): boolean => {
+            // Нормализуем все системы из правила и сравниваем с нормализованной системой клиента
+            const normalizedSystems = systems.map(s => normalizeTaxSystem(s));
+            return normalizedSystems.includes(entityTaxSystem);
+        };
+
         // Если для всех клиентов
         if (applicabilityConfig.allClients) {
             // Проверяем дополнительные условия
             if (applicabilityConfig.requiresEmployees && !entity.hasEmployees) return false;
             if (applicabilityConfig.requiresNds && !entity.isNdsPayer) return false;
-            if (applicabilityConfig.legalForms?.length && !applicabilityConfig.legalForms.includes(entity.legalForm)) return false;
-            if (applicabilityConfig.taxSystems?.length && !applicabilityConfig.taxSystems.includes(entity.taxSystem)) return false;
+            if (applicabilityConfig.legalForms?.length && !checkLegalForms(applicabilityConfig.legalForms)) return false;
+            if (applicabilityConfig.taxSystems?.length && !checkTaxSystems(applicabilityConfig.taxSystems)) return false;
             return true;
         }
 
@@ -198,8 +255,8 @@ export const convertToTaskRule = (dbRule: DbRule): TaskRule => {
         // Проверяем условия применимости
         if (applicabilityConfig.requiresEmployees && !entity.hasEmployees) return false;
         if (applicabilityConfig.requiresNds && !entity.isNdsPayer) return false;
-        if (applicabilityConfig.legalForms?.length && !applicabilityConfig.legalForms.includes(entity.legalForm)) return false;
-        if (applicabilityConfig.taxSystems?.length && !applicabilityConfig.taxSystems.includes(entity.taxSystem)) return false;
+        if (applicabilityConfig.legalForms?.length && !checkLegalForms(applicabilityConfig.legalForms)) return false;
+        if (applicabilityConfig.taxSystems?.length && !checkTaxSystems(applicabilityConfig.taxSystems)) return false;
 
         return true;
     };
@@ -213,7 +270,7 @@ export const convertToTaskRule = (dbRule: DbRule): TaskRule => {
         dateConfig: dbRule.dateConfig,
         dueDateRule: dbRule.dueDateRule,
         excludeMonths: dbRule.excludeMonths || undefined,
-        ruleType: dbRule.source === 'system' ? 'system' : 'custom',
+        ruleType: dbRule.source === 'system' ? 'global' : 'custom',
         category: dbRule.storageCategory as RuleCategory,
         shortTitle: dbRule.shortTitle,
         shortDescription: dbRule.shortDescription,
@@ -240,15 +297,6 @@ export const CATEGORIES: Record<string, { name: string; icon: string }> = {
     'организационные': { name: 'Организационные', icon: '🗂️' },
 };
 
-export const PERIODICITY_OPTIONS = [
-    { value: 'daily', label: 'Ежедневно' },
-    { value: 'weekly', label: 'Еженедельно' },
-    { value: 'biweekly', label: 'Раз в 2 недели' },
-    { value: 'monthly', label: 'Ежемесячно' },
-    { value: 'quarterly', label: 'Ежеквартально' },
-    { value: 'yearly', label: 'Ежегодно' },
-];
-
 export const TASK_TYPE_OPTIONS = [
     { value: 'Уведомление', label: 'Уведомление' },
     { value: 'Уплата', label: 'Уплата' },
@@ -256,8 +304,3 @@ export const TASK_TYPE_OPTIONS = [
     { value: 'Задача', label: 'Задача' },
 ];
 
-export const DUE_DATE_RULE_OPTIONS = [
-    { value: 'next_business_day', label: 'Перенос на след. рабочий день' },
-    { value: 'previous_business_day', label: 'Перенос на пред. рабочий день' },
-    { value: 'no_transfer', label: 'Без переноса' },
-];

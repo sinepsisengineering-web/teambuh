@@ -2,21 +2,30 @@
 // Справочник правил — новый дизайн с папками и модалкой
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { TASK_RULES, TaskRule, TaskType, RuleCategory, RuleType } from '../services/taskRules';
+import { TaskRule, TaskType, RuleCategory, RuleType, RepeatFrequency, TaskDueDateRule } from '../types';
 import {
+    syncRulesOnLogin,
+    DbRule,
     CustomRule,
     CreateCustomRule,
-    getAllCustomRules,
-    createCustomRule,
-    updateCustomRule,
-    deleteCustomRule,
+    deleteRule as deleteRuleFromApi,
+    createRule,
+    updateRule,
+    getAllRules as getAllCustomRules,
     PERIODICITY_OPTIONS
-} from '../services/customRulesService';
-import { syncRulesOnLogin, DbRule, deleteRule as deleteRuleFromApi, createRule, updateRule } from '../services/rulesService';
+} from '../services/rulesService';
 import { RuleCreateModal } from './RuleCreateModal';
 import { ArchiveConfirmModal } from './ArchiveConfirmModal';
 import { archiveItem } from '../services/storageService';
-import { RepeatFrequency, TaskDueDateRule, LegalForm, TaxSystem } from '../types';
+// Импорт справочника типов
+import {
+    LEGAL_FORMS, TAX_SYSTEMS,
+    getLegalFormLabel as getDictLegalFormLabel,
+    getTaxSystemLabel as getDictTaxSystemLabel,
+    LegalFormId, TaxSystemId,
+    LEGAL_FORM_OPTIONS, TAX_SYSTEM_OPTIONS,
+    normalizeLegalForm, normalizeTaxSystem,
+} from '../constants/dictionaries';
 
 // ============================================
 // ТИПЫ
@@ -65,6 +74,7 @@ interface DisplayRule {
         taxSystems?: string[];
         requiresEmployees?: boolean;
         requiresNds?: boolean;
+        profitAdvancePeriodicity?: 'monthly' | 'quarterly' | null;
     };
     originalRule: TaskRule | CustomRule;
 }
@@ -194,23 +204,15 @@ const getDateLabel = (dateConfig: any): string => {
     return parts.join(' ') || '—';
 };
 
+// Используем справочник для отображения label (с нормализацией старых форматов)
 const getLegalFormLabel = (form: string): string => {
-    switch (form) {
-        case LegalForm.OOO: return 'ООО';
-        case LegalForm.IP: return 'ИП';
-        case LegalForm.AO: return 'АО';
-        default: return form;
-    }
+    const normalizedId = normalizeLegalForm(form);
+    return getDictLegalFormLabel(normalizedId);
 };
 
 const getTaxSystemLabel = (system: string): string => {
-    switch (system) {
-        case TaxSystem.USN_DOHODY: return 'УСН Доходы';
-        case TaxSystem.USN_DOHODY_RASHODY: return 'УСН Доходы-Расходы';
-        case TaxSystem.OSNO: return 'ОСНО';
-        case TaxSystem.PATENT: return 'Патент';
-        default: return system;
-    }
+    const normalizedId = normalizeTaxSystem(system);
+    return getDictTaxSystemLabel(normalizedId);
 };
 
 // ============================================
@@ -269,10 +271,8 @@ const RuleDetailModal: React.FC<RuleDetailModalProps> = ({
 }) => {
     if (!rule) return null;
 
-    // Для системных правил определяем применимость автоматически
-    const applicability = rule.isCustom
-        ? rule.applicability
-        : getSystemRuleApplicability(rule.id);
+    // ВСЕГДА берём applicability из БД (не генерируем автоматически)
+    const applicability = rule.applicability;
 
     const hasApplicability = applicability && (
         applicability.requiresEmployees ||
@@ -323,13 +323,13 @@ const RuleDetailModal: React.FC<RuleDetailModalProps> = ({
 
                             {applicability?.legalForms && applicability.legalForms.length > 0 && (
                                 <p className="text-sm text-amber-800">
-                                    Для: {applicability.legalForms.join(', ')}
+                                    Для: {applicability.legalForms.map(f => getLegalFormLabel(f)).join(', ')}
                                 </p>
                             )}
 
                             {applicability?.taxSystems && applicability.taxSystems.length > 0 && (
                                 <p className="text-sm text-amber-800">
-                                    СНО: {applicability.taxSystems.join(', ')}
+                                    СНО: {applicability.taxSystems.map(s => getTaxSystemLabel(s)).join(', ')}
                                 </p>
                             )}
 
@@ -342,6 +342,12 @@ const RuleDetailModal: React.FC<RuleDetailModalProps> = ({
                             {applicability?.requiresNds && (
                                 <p className="text-sm text-amber-800">
                                     Только для плательщиков НДС
+                                </p>
+                            )}
+
+                            {applicability?.profitAdvancePeriodicity && (
+                                <p className="text-sm text-amber-800">
+                                    Авансы по прибыли: {applicability.profitAdvancePeriodicity === 'monthly' ? 'ежемесячные' : 'ежеквартальные'}
                                 </p>
                             )}
                         </div>
@@ -516,6 +522,7 @@ export const RulesView: React.FC<RulesViewProps> = ({
                 requiresNds: rule.applicabilityConfig.requiresNds,
                 legalForms: rule.applicabilityConfig.legalForms,
                 taxSystems: rule.applicabilityConfig.taxSystems,
+                profitAdvancePeriodicity: rule.applicabilityConfig.profitAdvancePeriodicity || (rule as any).profitAdvancePeriodicity,
             },
             originalRule: rule as any,
         }));
@@ -560,13 +567,15 @@ export const RulesView: React.FC<RulesViewProps> = ({
         // Супер-админ может удалять любые правила, обычный — только кастомные
         if (!isSuperAdmin && !selectedRule.isCustom) return;
         try {
-            // Архивируем вместо удаления
+            // Сначала удаляем из БД (soft delete — is_active = 0)
+            await deleteRuleFromApi(selectedRule.id);
+            // Затем добавляем в архив для истории
             await archiveItem('rules', selectedRule);
-            // Удаляем из БД (API уже сделал это)
-            await loadRules(); // Перезагружаем список
+            // Перезагружаем список
+            await loadRules();
             setSelectedRule(null);
         } catch (e) {
-            console.error('Failed to archive rule:', e);
+            console.error('Failed to delete rule:', e);
         }
         setShowDeleteConfirm(false);
     };

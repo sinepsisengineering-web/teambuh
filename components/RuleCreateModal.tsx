@@ -2,9 +2,16 @@
 // Модальное окно создания/редактирования правила
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { TaskType, RuleCategory, DateCalculationConfig } from '../services/taskRules';
-import { CreateCustomRule, CustomRule, PERIODICITY_OPTIONS, DUE_DATE_RULE_OPTIONS } from '../services/customRulesService';
-import { RepeatFrequency, TaskDueDateRule } from '../types';
+import { TaskType, RuleCategory, DateCalculationConfig, RepeatFrequency, TaskDueDateRule } from '../types';
+import { CreateCustomRule, CustomRule, PERIODICITY_OPTIONS, DUE_DATE_RULE_OPTIONS } from '../services/rulesService';
+// Импорт справочника типов
+import {
+    LEGAL_FORMS, TAX_SYSTEMS,
+    getLegalFormLabel, getTaxSystemLabel,
+    LegalFormId, TaxSystemId,
+    LEGAL_FORM_OPTIONS, TAX_SYSTEM_OPTIONS,
+    normalizeLegalForm, normalizeTaxSystem,
+} from '../constants/dictionaries';
 
 // ============================================
 // ТИПЫ
@@ -216,18 +223,23 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
 
             // Интерпретация значений:
             // - null = для всех (allClients=true) → выбираем все варианты
-            // - массив = конкретные значения
+            // - массив = конкретные значения (с нормализацией старых форматов)
             // - пустой массив = ничего не выбрано
-            const ALL_LEGAL_FORMS = ['ООО', 'ИП', 'АО'];
-            const ALL_TAX_SYSTEMS = ['ОСНО', 'УСН', 'Патент'];
+            const ALL_LEGAL_FORM_IDS = LEGAL_FORM_OPTIONS.map(o => o.id);
+            const ALL_TAX_SYSTEM_IDS = TAX_SYSTEM_OPTIONS.map(o => o.id);
 
+            // Нормализуем загруженные значения (могут быть старые ООО/ОСНО или новые OOO/OSNO)
             const legalForms = appConfig.legalForms === null
-                ? ALL_LEGAL_FORMS  // null = для всех
-                : (Array.isArray(appConfig.legalForms) ? appConfig.legalForms : []);
+                ? ALL_LEGAL_FORM_IDS  // null = для всех
+                : (Array.isArray(appConfig.legalForms)
+                    ? appConfig.legalForms.map(f => normalizeLegalForm(f))
+                    : []);
 
             const taxSystems = appConfig.taxSystems === null
-                ? ALL_TAX_SYSTEMS  // null = для всех
-                : (Array.isArray(appConfig.taxSystems) ? appConfig.taxSystems : []);
+                ? ALL_TAX_SYSTEM_IDS  // null = для всех
+                : (Array.isArray(appConfig.taxSystems)
+                    ? appConfig.taxSystems.map(s => normalizeTaxSystem(s))
+                    : []);
 
             console.log('[RuleCreateModal] Setting legalForms:', legalForms);
             console.log('[RuleCreateModal] Setting taxSystems:', taxSystems);
@@ -450,23 +462,23 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
                             <div>
                                 <label className="block text-xs text-slate-500 mb-1">Форма (ОПФ)</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {['ООО', 'ИП', 'АО'].map(form => (
+                                    {LEGAL_FORM_OPTIONS.map(opt => (
                                         <button
-                                            key={form}
+                                            key={opt.id}
                                             type="button"
                                             onClick={() => {
                                                 setSelectedLegalForms(prev =>
-                                                    prev.includes(form)
-                                                        ? prev.filter(f => f !== form)
-                                                        : [...prev, form]
+                                                    prev.includes(opt.id)
+                                                        ? prev.filter(f => f !== opt.id)
+                                                        : [...prev, opt.id]
                                                 );
                                             }}
-                                            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${selectedLegalForms.includes(form)
+                                            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${selectedLegalForms.includes(opt.id)
                                                 ? 'bg-amber-600 text-white'
                                                 : 'bg-white border border-amber-300 text-amber-700 hover:bg-amber-100'
                                                 }`}
                                         >
-                                            {form}
+                                            {opt.label}
                                         </button>
                                     ))}
                                 </div>
@@ -474,23 +486,23 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
                             <div>
                                 <label className="block text-xs text-slate-500 mb-1">СНО</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {['ОСНО', 'УСН', 'Патент'].map(tax => (
+                                    {TAX_SYSTEM_OPTIONS.map(opt => (
                                         <button
-                                            key={tax}
+                                            key={opt.id}
                                             type="button"
                                             onClick={() => {
                                                 setSelectedTaxSystems(prev =>
-                                                    prev.includes(tax)
-                                                        ? prev.filter(t => t !== tax)
-                                                        : [...prev, tax]
+                                                    prev.includes(opt.id)
+                                                        ? prev.filter(t => t !== opt.id)
+                                                        : [...prev, opt.id]
                                                 );
                                             }}
-                                            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${selectedTaxSystems.includes(tax)
+                                            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${selectedTaxSystems.includes(opt.id)
                                                 ? 'bg-amber-600 text-white'
                                                 : 'bg-white border border-amber-300 text-amber-700 hover:bg-amber-100'
                                                 }`}
                                         >
-                                            {tax}
+                                            {opt.label}
                                         </button>
                                     ))}
                                 </div>

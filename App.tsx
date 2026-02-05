@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { Calendar } from './components/Calendar';
+// ВРЕМЕННО ОТКЛЮЧЕНО: import { Calendar } from './components/Calendar';
 import { Modal } from './components/Modal';
 import { LegalEntityEditForm } from './components/LegalEntityEditForm';
 import { TaskForm } from './components/TaskForm';
@@ -14,7 +14,9 @@ import { DashboardView } from './components/DashboardView';
 import { StaffView } from './components/StaffView';
 import { ClientsView } from './components/ClientsView';
 import { LoginScreen } from './components/LoginScreen';
-import { LegalEntity, Task, Note, Employee } from './types';
+// ВРЕМЕННО ОТКЛЮЧЕНО: import { ClientDetailCard } from './components/ClientDetailCard';
+import { RulesView } from './components/RulesView';
+import { LegalEntity, Task, Note, Employee, LegalForm, TaxSystem } from './types';
 import { DUMMY_CLIENTS, DUMMY_EMPLOYEES } from './dummy-data';
 import { useTasks } from './hooks/useTasks';
 import { useConfirmation } from './contexts/ConfirmationProvider';
@@ -22,7 +24,7 @@ import { useAuth } from './contexts/AuthContext';
 import { initializeHolidayService } from './services/holidayService';
 import { storage } from './services/storageService';
 
-type View = 'dashboard' | 'calendar' | 'tasks' | 'clients' | 'staff' | 'archive' | 'settings';
+type View = 'dashboard' | 'tasks' | 'clients' | 'staff' | 'rules' | 'archive' | 'settings'; // calendar ВРЕМЕННО УБРАН
 
 const parseLegalEntity = (le: any): LegalEntity => {
     let migratedNotes: Note[] = [];
@@ -109,7 +111,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
 
     const [selectedLegalEntity, setSelectedLegalEntity] = useState<LegalEntity | null>(null);
     const [tasksViewKey, setTasksViewKey] = useState(0);
-    const [activeView, setActiveView] = useState<View>('calendar');
+    const [activeView, setActiveView] = useState<View>('tasks'); // Стартовая страница: Задачи
     const [isLegalEntityModalOpen, setIsLegalEntityModalOpen] = useState(false);
     const [legalEntityToEdit, setLegalEntityToEdit] = useState<LegalEntity | null>(null);
     const [navigateToClientId, setNavigateToClientId] = useState<string | null>(null); // Для перехода в ClientsView
@@ -150,8 +152,21 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
 
     const handleSaveLegalEntity = async (entityData: LegalEntity) => {
         try {
+            // Авто-расчёт вычисляемых полей
+            const enrichedEntity: LegalEntity = {
+                ...entityData,
+                // hasPatents = есть патенты в массиве
+                hasPatents: (entityData.patents?.length || 0) > 0,
+                // isNdflAgent = есть сотрудники
+                isNdflAgent: entityData.hasEmployees,
+                // paysNdflSelf = ИП на ОСНО
+                paysNdflSelf: entityData.legalForm === LegalForm.IP && entityData.taxSystem === TaxSystem.OSNO,
+                // isEshn = система ЕСХН
+                isEshn: entityData.taxSystem === TaxSystem.ESHN,
+            };
+
             // Сохраняем через сервер API
-            const savedEntity = await storage.saveClient(entityData);
+            const savedEntity = await storage.saveClient(enrichedEntity);
 
             const entityExists = legalEntities.some(le => le.id === savedEntity.id);
 
@@ -282,28 +297,15 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
     };
 
     const renderContent = () => {
+        // ВРЕМЕННО ОТКЛЮЧЕНО: ClientDetailCard не существует
         if (selectedLegalEntity && activeView === 'clients') {
-            const entityTasks = tasks.filter(task => task.legalEntityId === selectedLegalEntity.id);
-            return <ClientDetailCard
-                legalEntity={selectedLegalEntity}
-                tasks={entityTasks}
-                onClose={() => setSelectedLegalEntity(null)}
-                onEdit={handleOpenLegalEntityForm}
-                onArchive={handleArchiveLegalEntity}
-                onDelete={handleDeleteLegalEntity}
-                onAddTask={() => handleOpenNewTaskForm({ legalEntityId: selectedLegalEntity.id })}
-                onOpenTaskDetail={handleOpenTaskDetail}
-                onBulkComplete={handleBulkComplete}
-                onBulkDelete={handleBulkDelete}
-                onDeleteTask={handleDeleteTask}
-                onAddNote={handleAddNote}
-                onEditNote={handleEditNote}
-                onDeleteNote={handleDeleteNote}
-            />;
+            // const entityTasks = tasks.filter(task => task.legalEntityId === selectedLegalEntity.id);
+            // return <ClientDetailCard ... />;
+            return null; // TODO: создать компонент ClientDetailCard
         }
         switch (activeView) {
             case 'dashboard': return <DashboardView />;
-            case 'calendar': return <Calendar tasks={tasks} legalEntities={activeLegalEntities} onUpdateTaskStatus={() => { }} onAddTask={(date) => handleOpenNewTaskForm({ dueDate: date })} onOpenDetail={handleOpenTaskDetail} onDeleteTask={handleDeleteTask} />;
+            // ВРЕМЕННО ОТКЛЮЧЕНО: case 'calendar': return <Calendar ... />;
             case 'tasks':
                 return <TasksView
                     key={`${tasksViewKey}-${navigateToTasksWithClientId || ''}`}
@@ -343,7 +345,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                 confirm={confirm}
             />;
             case 'rules': return <RulesView isSuperAdmin={true} isAdmin={true} />;
-            case 'archive': return <ArchiveView onBack={() => setActiveView('calendar')} onRestoreItem={reloadData} />;
+            case 'archive': return <ArchiveView onBack={() => setActiveView('tasks')} onRestoreItem={reloadData} />;
             case 'settings': return <SettingsView />;
             default: return null;
         }

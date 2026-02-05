@@ -1,10 +1,47 @@
 // services/taskSyncService.ts
 // Сервис синхронизации задач между генератором и SQLite хранилищем
 
-import { Task, LegalEntity, TaskStatus } from '../types';
+import { Task, LegalEntity, TaskStatus, TaskRule } from '../types';
 import { generateTasksForLegalEntity, updateTaskStatuses } from './taskGenerator';
 import * as taskStorage from './taskStorageService';
 import { StoredTask } from './taskStorageService';
+import { getRulesForGeneration, syncRulesOnLogin } from './rulesService';
+
+// Кеш правил (чтобы не загружать при каждом клиенте)
+let cachedRules: TaskRule[] | null = null;
+let syncDone = false;
+
+const getCachedRules = async (): Promise<TaskRule[]> => {
+    // При первом вызове выполняем синхронизацию (копирует правила из Master DB в Tenant DB)
+    if (!syncDone) {
+        try {
+            await syncRulesOnLogin();
+            syncDone = true;
+            console.log('[TaskSync] Rules synced to Tenant DB');
+        } catch (error) {
+            console.warn('[TaskSync] Error syncing rules:', error);
+            // Продолжаем работу — getAllRules вернёт то что есть
+        }
+    }
+
+    if (!cachedRules) {
+        try {
+            cachedRules = await getRulesForGeneration();
+            console.log(`[TaskSync] Loaded ${cachedRules.length} rules from database`);
+        } catch (error) {
+            console.error('[TaskSync] Error loading rules from DB, using fallback:', error);
+            // Fallback будет использован в generateTasksForLegalEntity
+            cachedRules = [];
+        }
+    }
+    return cachedRules;
+};
+
+// Сбросить кеш правил (вызывать при изменении правил)
+export const clearRulesCache = () => {
+    cachedRules = null;
+    syncDone = false;
+};
 
 // Форматирование даты в локальном формате YYYY-MM-DD (без UTC сдвига)
 const formatLocalDate = (date: Date): string => {
@@ -64,6 +101,9 @@ const taskToStoredTask = (
         id: task.id,
         title: task.title,
         description: description || null,
+        fullDescription: task.fullDescription || null,  // Полное описание из правила
+        legalBasis: task.legalBasis || null,            // Основание (ссылка на закон)
+        ruleId: task.ruleId || null,                    // ID правила
         taskSource,
         recurrence,
         cyclePattern: task.repeat || null,
@@ -110,6 +150,9 @@ export const storedTaskToTask = (storedTask: StoredTask): Task => {
         legalEntityId: storedTask.clientId,
         title: storedTask.title,
         description: storedTask.description || undefined,
+        fullDescription: storedTask.fullDescription || undefined,  // Полное описание из правила
+        legalBasis: storedTask.legalBasis || undefined,            // Основание (ссылка на закон)
+        ruleId: storedTask.ruleId || undefined,                    // ID правила
         originalDueDate,  // Оригинальная дата по правилу
         dueDate,          // Текущая дата (после переноса)
         dueDateRule: 'none' as any,
@@ -132,8 +175,12 @@ export const syncTasksForLegalEntity = async (
     const existingStored = await taskStorage.getAllTasks({ clientId: legalEntity.id });
     const existingMap = new Map(existingStored.map(t => [t.id, t]));
 
-    // Генерируем задачи по правилам (с уже применённым переносом дат)
-    const generatedTasks = generateTasksForLegalEntity(legalEntity);
+    // Загружаем правила из БД (кешируются)
+    const rules = await getCachedRules();
+
+    // Генерируем задачи по правилам из БД
+    // Правила загружаются из БД — никаких fallback на вшитые TASK_RULES
+    const generatedTasks = generateTasksForLegalEntity(legalEntity, rules);
 
     const newTasks: Task[] = [];
     const tasksToUpdate: { id: string; dueDate: string }[] = [];
@@ -162,6 +209,9 @@ export const syncTasksForLegalEntity = async (
                 id: t.id,
                 title: t.title,
                 description: t.description,
+                fullDescription: t.fullDescription,  // Полное описание из правила
+                legalBasis: t.legalBasis,            // Основание (ссылка на закон)
+                ruleId: t.ruleId,                    // ID правила
                 taskSource: t.taskSource,
                 recurrence: t.recurrence,
                 cyclePattern: t.cyclePattern,
@@ -185,6 +235,24 @@ export const syncTasksForLegalEntity = async (
 
     if (tasksToUpdate.length > 0) {
         console.log(`[TaskSync] Updated ${tasksToUpdate.length} task dates for ${legalEntity.name}`);
+    }
+
+    // === УДАЛЕНИЕ УСТАРЕВШИХ АВТО-ЗАДАЧ ===
+    // Если авто-задача существует в БД, но не генерируется (правило больше не применяется),
+    // и задача не завершена — удаляем её
+    const generatedIds = new Set(generatedTasks.map(t => t.id));
+    const obsoleteTasks = existingStored.filter(t =>
+        t.taskSource === 'auto' &&
+        t.status !== 'completed' &&
+        !generatedIds.has(t.id)
+    );
+
+    if (obsoleteTasks.length > 0) {
+        console.log(`[TaskSync] Removing ${obsoleteTasks.length} obsolete auto-tasks for ${legalEntity.name}`);
+        for (const task of obsoleteTasks) {
+            console.log(`[TaskSync]   - Deleting: ${task.id} (${task.title})`);
+            await taskStorage.deleteTask(task.id);
+        }
     }
 
     // Возвращаем все задачи (из БД + обновлённые статусы)

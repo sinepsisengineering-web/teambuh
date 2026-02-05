@@ -1,18 +1,25 @@
 // types.ts
 
+// Импортируем справочник для получения label (отображение) при необходимости
+// ID хранятся в данных, label используется для отображения в UI
+// См. constants/dictionaries.ts для полного справочника
+
+// Системы налогообложения — ID совпадают со справочником
 export enum TaxSystem {
-  OSNO = 'ОСНО',
-  USN_DOHODY = 'УСН "Доходы"',
-  USN_DOHODY_RASHODY = 'УСН "Доходы минус расходы"',
-  PATENT = 'Патент',
+  OSNO = 'OSNO',
+  USN_DOHODY = 'USN6',
+  USN_DOHODY_RASHODY = 'USN15',
+  PATENT = 'PATENT',
+  ESHN = 'ESHN',
 }
 
+// Юридические формы — ID совпадают со справочником
 export enum LegalForm {
-  OOO = 'ООО',
-  IP = 'ИП',
-  AO = 'АО',
-  PAO = 'ПАО',
-  ZAO = 'ЗАО',
+  OOO = 'OOO',
+  IP = 'IP',
+  AO = 'AO',
+  PAO = 'PAO',
+  ZAO = 'ZAO',
 }
 
 export interface Credential {
@@ -64,6 +71,17 @@ export interface LegalEntity {
   ndsValue?: string;
   hasEmployees: boolean;
   employeeCount?: number;
+  // Периодичность авансов по налогу на прибыль (только для ООО/АО на ОСНО)
+  profitAdvancePeriodicity?: 'monthly' | 'quarterly';
+
+  // === ВЫЧИСЛЯЕМЫЕ ПОЛЯ ДЛЯ ПРАВИЛ ГЕНЕРАЦИИ ЗАДАЧ ===
+  // (авто-расчёт при сохранении клиента)
+
+  hasPatents?: boolean;               // = patents.length > 0
+  paysNdflSelf?: boolean;             // = ИП + ОСНО
+  isNdflAgent?: boolean;              // = hasEmployees
+  isEshn?: boolean;                   // = taxSystem === 'ESHN'
+
   notes?: Note[];
   credentials: Credential[];
   patents: Patent[];
@@ -151,6 +169,11 @@ export interface Task {
   isUrgent?: boolean;      // 🔥 Срочная
   isBlocked?: boolean;     // ⏸️ Ожидает (заблокирована)
   blockedReason?: string;  // Причина блокировки
+
+  // === ПОЛЯ ИЗ СПРАВОЧНИКА ПРАВИЛ ===
+  fullDescription?: string;  // Полное описание из правила
+  legalBasis?: string;       // Основание (ссылка на закон)
+  ruleId?: string;           // ID правила (для связи со справочником)
 }
 
 
@@ -209,4 +232,59 @@ export interface Employee {
   isActive: boolean;
   isBlocked: boolean;
   documents: UploadedDocument[];
+}
+
+// ============================================
+// ТИПЫ ДЛЯ ПРАВИЛ (перенесено из taskRules.ts)
+// ============================================
+
+export type TaskType = 'Отчет' | 'Уплата' | 'Уведомление' | 'Задача';
+export type RuleCategory = 'налоговые' | 'финансовые' | 'организационные';
+export type RuleType = 'global' | 'local' | 'custom';
+
+// Конфигурация расчёта даты
+export interface DateCalculationConfig {
+  type: 'fixed_day' | 'day_of_month' | 'end_of_month' | 'relative';
+  day?: number;           // День месяца (1-31)
+  monthOffset?: number;   // Смещение месяца (0 = текущий, 1 = следующий)
+  quarter?: 'current' | 'next';
+}
+
+// Правило (запись из БД)
+export interface TaskRule {
+  id: string;
+  titleTemplate: string;
+  shortTitle?: string;
+  shortDescription?: string;
+  description?: string;
+  lawReference?: string;
+
+  taskType: TaskType;
+  periodicity: RepeatFrequency;
+  category: RuleCategory;
+  ruleType: RuleType;
+
+  // Применимость (декларативно)
+  applicabilityConfig?: {
+    allClients?: boolean;
+    clientIds?: string[];
+    legalForms?: string[];
+    taxSystems?: string[];
+    requiresEmployees?: boolean;
+    requiresNds?: boolean;
+    profitAdvancePeriodicity?: 'monthly' | 'quarterly';
+  };
+
+  // Для старой совместимости — функция (deprecated)
+  appliesTo?: (entity: LegalEntity) => boolean;
+
+  // Сроки
+  dateConfig: DateCalculationConfig;
+  dueDateRule: TaskDueDateRule;
+  excludeMonths?: number[];
+
+  // Мета
+  createdAt?: string;
+  updatedAt?: string;
+  isActive?: boolean;
 }

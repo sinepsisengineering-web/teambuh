@@ -287,6 +287,9 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
                                                 id: task.id,
                                                 title: task.title,
                                                 description: task.description ?? undefined,
+                                                fullDescription: task.fullDescription ?? undefined,
+                                                legalBasis: task.legalBasis ?? undefined,
+                                                clientName: task.clientName ?? undefined,
                                                 dueDate: task.currentDueDate,
                                                 status: task.status,
                                             })}

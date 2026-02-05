@@ -1,9 +1,10 @@
 // src/services/taskGenerator.ts
 
-import { LegalEntity, Task, TaskStatus, TaskDueDateRule, RepeatFrequency, ReminderSetting } from '../types';
-import { TASK_RULES, TaskRule } from './taskRules';
+import { LegalEntity, Task, TaskStatus, TaskDueDateRule, RepeatFrequency, ReminderSetting, TaskRule } from '../types';
 import { toISODateString, isWeekend, MONTH_NAMES, MONTH_NAMES_GENITIVE } from '../utils/dateUtils';
-import { isHoliday } from './holidayService';
+import { isHoliday, getAvailableCalendarYears } from './holidayService';
+// Импорт справочника типов для нормализации ID
+import { normalizeLegalForm, normalizeTaxSystem } from '../constants/dictionaries';
 
 // ==========================================
 // 1. БАЗОВЫЕ УТИЛИТЫ ДЛЯ РАБОТЫ С ДАТАМИ
@@ -98,15 +99,41 @@ function calculateDueDate(year: number, periodIndex: number, rule: TaskRule): Da
 // 2. ГЕНЕРАЦИЯ АВТОМАТИЧЕСКИХ ЗАДАЧ
 // ==========================================
 
-export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] => {
+/**
+ * Генерация задач для клиента на основе правил.
+ * @param legalEntity - клиент для генерации задач
+ * @param rules - правила для генерации (обязательный параметр — из БД)
+ */
+export const generateTasksForLegalEntity = (legalEntity: LegalEntity, rules: TaskRule[] = []): Task[] => {
+  // Используем переданные правила (из БД)
+  const activeRules = rules;
+
+  // Лог источника правил для отладки
+  if (activeRules.length > 0) {
+    console.log(`[TaskGen] Используются правила из БД: ${activeRules.length} правил`);
+  } else {
+    console.log(`[TaskGen] ВНИМАНИЕ: правила не переданы! Задачи не будут сгенерированы.`);
+    return [];
+  }
+
   const allTasks: Task[] = [];
-  const startDate = legalEntity.createdAt ? new Date(legalEntity.createdAt) : new Date();
-  startDate.setHours(0, 0, 0, 0);
-  const startYear = startDate.getFullYear();
-  const yearsToGenerate = [startYear, startYear + 1, startYear + 2, startYear + 3];
+
+  // Получаем годы для генерации ТОЛЬКО из производственного календаря
+  // Задачи генерируются только для тех лет, для которых загружен календарь через API
+  const yearsToGenerate = getAvailableCalendarYears();
+
+  if (yearsToGenerate.length === 0) {
+    console.warn('[TaskGen] Нет загруженных календарей! Добавляем текущий год с fallback');
+    yearsToGenerate.push(new Date().getFullYear());
+  }
+
+  console.log(`[TaskGen] Генерация для годов: ${yearsToGenerate.join(', ')}`);
+
+  // DEBUG: выводим данные клиента для проверки
+  console.log(`[TaskGen] DEBUG: клиент ${legalEntity.name}: legalForm=${legalEntity.legalForm}, taxSystem=${legalEntity.taxSystem}, profitAdvancePeriodicity=${legalEntity.profitAdvancePeriodicity}, hasEmployees=${legalEntity.hasEmployees}`);
 
   // --- Генерация задач по правилам ---
-  TASK_RULES.forEach(rule => {
+  activeRules.forEach(rule => {
     if (!rule.appliesTo(legalEntity)) { return; }
     yearsToGenerate.forEach(year => {
       const periods = rule.periodicity === RepeatFrequency.Monthly ? 12
@@ -115,12 +142,8 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] =>
       for (let i = 0; i < periods; i++) {
         const periodIndex = i;
 
-        // Пропускаем исключённые месяцы
-        if (rule.periodicity === RepeatFrequency.Monthly && rule.excludeMonths?.includes(periodIndex)) {
-          continue;
-        }
-        // Пропускаем 4 квартал для авансов
-        if (rule.periodicity === RepeatFrequency.Quarterly && rule.id.includes('AVANS') && periodIndex === 3) {
+        // Пропускаем исключённые месяцы/кварталы (настраивается в правиле через excludeMonths)
+        if (rule.excludeMonths?.includes(periodIndex)) {
           continue;
         }
 
@@ -134,8 +157,7 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] =>
           periodEndDate = new Date(year, 11, 31);
         }
 
-        // Пропускаем периоды, которые закончились до создания клиента
-        if (periodEndDate < startDate) { continue; }
+        // Генерируем задачи для всех периодов в доступных годах
 
         // ЧИСТАЯ дата по правилу (для original_due_date)
         const rawDueDate = calculateRawDueDate(year, periodIndex, rule);
@@ -147,8 +169,7 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] =>
           console.log(`[TaskGen] DATE TRANSFER: ${rule.id} - raw=${rawDueDate.toISOString().split('T')[0]}, adjusted=${dueDate.toISOString().split('T')[0]}`);
         }
 
-        // Не создаём задачи с датой раньше создания клиента
-        if (dueDate < startDate) { continue; }
+        // Генерируем задачи для всех дат в доступных годах
 
         const title = formatTaskTitle(rule.titleTemplate, year, periodIndex, rule.periodicity);
 
@@ -156,6 +177,10 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] =>
           id: `auto-${legalEntity.id}-${rule.id}-${year}-${periodIndex}`,
           legalEntityId: legalEntity.id,
           title,
+          description: rule.shortDescription || `Автоматическая задача за ${MONTH_NAMES_GENITIVE[new Date(dueDate).getMonth()]} ${year}`,
+          fullDescription: rule.description,     // Полное описание из правила
+          legalBasis: rule.lawReference,         // Основание (ссылка на закон)
+          ruleId: rule.id,                       // ID правила для связи со справочником
           originalDueDate: rawDueDate,  // Чистая дата по правилу (25-е)
           dueDate,                       // Дата после переноса (27-е если выходной)
           status: TaskStatus.Upcoming,
@@ -187,7 +212,7 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] =>
         const currentYearEndDate = new Date(originalEndDate);
         currentYearEndDate.setFullYear(originalEndDate.getFullYear() + yearOffset);
 
-        if (currentYearEndDate < startDate) { return; }
+        if (currentYearEndDate < originalStartDate) { return; }
 
         const durationMonths = (currentYearEndDate.getFullYear() - currentYearStartDate.getFullYear()) * 12
           + (currentYearEndDate.getMonth() - currentYearStartDate.getMonth()) + 1;
@@ -208,7 +233,7 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity): Task[] =>
         });
 
         const safePush = (task: Task) => {
-          if (task.dueDate >= startDate) {
+          if (task.dueDate >= originalStartDate) {
             allTasks.push(task);
           }
         };
@@ -397,8 +422,13 @@ const getPeriodStartDateForTask = (task: Task): Date | null => {
   const year = parseInt(match[2], 10);
   const periodIndex = parseInt(match[3], 10);
 
-  const taskRule = TASK_RULES.find(r => r.id === ruleId);
-  if (!taskRule) return null;
+  // TODO: Правила теперь загружаются из БД, нужно передавать их через параметр
+  // Пока возвращаем null — блокировка по периоду временно отключена
+  // const taskRule = rules.find(r => r.id === ruleId);
+  // if (!taskRule) return null;
+
+  // Временное решение: не блокируем задачи по периоду до интеграции с БД правил
+  return null;
 
   let periodStartDate: Date;
 

@@ -8,6 +8,9 @@ export interface TaskInfoData {
     id: string;
     title: string;
     description?: string;
+    fullDescription?: string;  // Полное описание из правила
+    legalBasis?: string;       // Основание (ссылка на закон)
+    clientName?: string;       // Имя клиента
     dueDate: Date | string;
     status?: string;
     cyclePattern?: string;
@@ -71,18 +74,33 @@ export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onCl
                 </div>
 
                 {/* Content */}
-                <div className="px-6 py-5">
-                    {/* Описание / Правила */}
-                    {task.description ? (
-                        <div className="mb-4">
-                            <h3 className="text-sm font-medium text-slate-500 mb-2">Описание / Правила</h3>
-                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                                {task.description}
-                            </p>
+                <div className="px-6 py-5 space-y-4">
+                    {/* Клиент */}
+                    {task.clientName && (
+                        <div className="flex items-center gap-2">
+                            <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                            <span className="text-sm font-medium text-slate-700">{task.clientName}</span>
                         </div>
-                    ) : (
-                        <div className="mb-4 text-sm text-slate-400 italic">
-                            Нет описания
+                    )}
+
+                    {/* Описание (объединённое с основанием) */}
+                    {(task.fullDescription || task.description || task.legalBasis) && (
+                        <div>
+                            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                                Описание
+                            </h3>
+                            <div className="text-sm text-slate-700 leading-relaxed space-y-1">
+                                {task.fullDescription ? (
+                                    <p className="whitespace-pre-wrap">{task.fullDescription}</p>
+                                ) : task.description ? (
+                                    <p>{task.description}</p>
+                                ) : null}
+                                {task.legalBasis && (
+                                    <p className="text-slate-500">{task.legalBasis}</p>
+                                )}
+                            </div>
                         </div>
                     )}
 
