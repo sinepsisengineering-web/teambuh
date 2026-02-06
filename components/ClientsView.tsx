@@ -2166,20 +2166,39 @@ const ClientManageTab: React.FC<{
 // ============================================
 
 interface ClientsViewProps {
-    legalEntities: LegalEntity[];
-    onSave: (entity: LegalEntity) => void;
-    onDelete: (entity: LegalEntity) => void;
-    onArchive?: (entity: LegalEntity) => void;
     employees?: Employee[];
     initialClientId?: string; // Для перехода сразу в детализацию клиента
     onNavigateToTasks?: (clientId: string, month: Date) => void; // Переход в TasksView
+    onDataChanged?: () => void; // Callback для синхронизации с App.tsx
 }
 
-export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave, onDelete, onArchive, employees = [], initialClientId, onNavigateToTasks }) => {
+export const ClientsView: React.FC<ClientsViewProps> = ({ employees = [], initialClientId, onNavigateToTasks, onDataChanged }) => {
     // Если есть initialClientId — сразу открываем details
     const [activeTab, setActiveTab] = useState<ClientTab>(initialClientId ? 'details' : 'list');
     const [selectedClientId, setSelectedClientId] = useState<string | null>(initialClientId || null);
     const [contractPreview, setContractPreview] = useState<{ clientId: string; clientName: string } | null>(null);
+
+    // ===== ПРЯМОЕ ЧТЕНИЕ ИЗ БД =====
+    const [legalEntities, setLegalEntities] = useState<LegalEntity[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Загрузка данных напрямую из API
+    const fetchClients = async () => {
+        try {
+            const data = await storage.loadAllClients();
+            console.log('[ClientsView] Loaded', data.length, 'clients from API');
+            setLegalEntities(data);
+        } catch (error) {
+            console.error('[ClientsView] Failed to load clients:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Загрузка при монтировании
+    useEffect(() => {
+        fetchClients();
+    }, []);
 
     // Конвертируем LegalEntity в Client для отображения в UI
     const clients = useMemo(() => {
@@ -2195,20 +2214,44 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
         setContractPreview({ clientId, clientName });
     };
 
+    // ===== СОХРАНЕНИЕ С ПЕРЕЗАГРУЗКОЙ =====
+    const handleSaveEntity = async (entity: LegalEntity) => {
+        try {
+            console.log('[ClientsView] Saving entity:', entity.id, entity.name);
+            await storage.saveClient(entity);
+            console.log('[ClientsView] Save successful, refetching...');
+            // После сохранения - перезагружаем данные из БД
+            await fetchClients();
+            // Синхронизируем с App.tsx для TasksView
+            if (onDataChanged) {
+                onDataChanged();
+            }
+            console.log('[ClientsView] Refetch complete');
+        } catch (error) {
+            console.error('[ClientsView] Failed to save client:', error);
+            // TODO: показать ошибку пользователю
+        }
+    };
+
     // Удаление клиента из списка (архивация через DELETE API)
     const handleDeleteFromList = async (clientId: string) => {
         try {
             // Вызываем DELETE API который архивирует клиента в SQLite
             await storage.deleteClient(clientId);
-
-            // Обновляем локальный state — клиент станет архивным
-            const entity = legalEntities.find(le => le.id === clientId);
-            if (entity) {
-                onDelete({ ...entity, isArchived: true });
+            // После удаления - перезагружаем данные
+            await fetchClients();
+            // Синхронизируем с App.tsx
+            if (onDataChanged) {
+                onDataChanged();
             }
         } catch (error) {
             console.error('[ClientsView] Failed to archive client:', error);
         }
+    };
+
+    // Удаление entity (через архивацию)
+    const handleDeleteEntity = async (entity: LegalEntity) => {
+        await handleDeleteFromList(entity.id);
     };
 
     const tabs = [
@@ -2216,6 +2259,15 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
         { id: 'details' as const, label: 'Детализация' },
         { id: 'manage' as const, label: 'Управление' },
     ];
+
+    // Показываем загрузку
+    if (isLoading) {
+        return (
+            <div className="h-full flex items-center justify-center">
+                <div className="text-slate-500">Загрузка клиентов...</div>
+            </div>
+        );
+    }
 
     return (
         <div className="h-full flex flex-col -m-8">
@@ -2239,7 +2291,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({ legalEntities, onSave,
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
                 {activeTab === 'list' && <ClientListTab clients={clients} onSelectClient={handleSelectClient} onViewContract={handleViewContract} onDeleteClient={handleDeleteFromList} />}
                 {activeTab === 'details' && <ClientDetailsTab clients={clients} clientId={selectedClientId} onNavigateToTasks={onNavigateToTasks} onDeleteClient={handleDeleteFromList} />}
-                {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={onSave} onDelete={onDelete} employees={employees} initialClientId={selectedClientId} />}
+                {activeTab === 'manage' && <ClientManageTab clients={clients} legalEntities={legalEntities} onSave={handleSaveEntity} onDelete={handleDeleteEntity} employees={employees} initialClientId={selectedClientId} />}
             </div>
 
             {/* Модалка просмотра договора из списка */}

@@ -40,6 +40,8 @@ export const TAX_SYSTEMS = {
     USN15: { id: 'USN15', label: 'УСН "Д-Р"', fullName: 'Упрощённая система налогообложения (доходы минус расходы)', rate: 15 },
     PATENT: { id: 'PATENT', label: 'Патент', fullName: 'Патентная система налогообложения' },
     ESHN: { id: 'ESHN', label: 'ЕСХН', fullName: 'Единый сельскохозяйственный налог' },
+    AUSN: { id: 'AUSN', label: 'АУСН', fullName: 'Автоматизированная упрощённая система налогообложения' },
+    NPD: { id: 'NPD', label: 'НПД', fullName: 'Налог на профессиональный доход (самозанятые)' },
 } as const;
 
 export type TaxSystemId = keyof typeof TAX_SYSTEMS;

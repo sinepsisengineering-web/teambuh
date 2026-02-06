@@ -324,12 +324,9 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
             case 'clients':
                 return <ClientsView
                     key={navigateToClientId || 'no-init'}
-                    legalEntities={activeLegalEntities}
-                    onSave={handleSaveLegalEntity}
-                    onDelete={handleDeleteLegalEntity}
-                    onArchive={handleArchiveLegalEntity}
                     employees={employees}
                     initialClientId={navigateToClientId || undefined}
+                    onDataChanged={reloadData}
                     onNavigateToTasks={(clientId, month) => {
                         // Переходим в TasksView с выбранным клиентом
                         setNavigateToTasksWithClientId(clientId);
