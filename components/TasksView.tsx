@@ -773,6 +773,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         onDateChange={handleMonthChange}
                         onDayClick={handleDayClick}
                         highlightedDay={filters.selectedDay?.getDate()}
+                        showFullMonthButton={!!filters.selectedDay}
                         onShowFullMonth={handleMonthNameClick}
                     />
 

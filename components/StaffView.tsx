@@ -330,6 +330,7 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
                         selectedDate={selectedDate}
                         onDayClick={(date) => setSelectedDate(date.toDateString() === selectedDate?.toDateString() ? null : date)}
                         onDateChange={(date) => setCurrentMonth(date)}
+                        showFullMonthButton={!!selectedDate}
                         onShowFullMonth={() => setSelectedDate(null)}
                     />
 
@@ -450,10 +451,11 @@ interface StaffManageTabProps {
     employees: Employee[];
     onSave: (emp: Employee) => void;
     onDelete: (emp: Employee) => void;
+    onDataChanged?: () => void;
     confirm?: (options: { title: string; message: string; confirmButtonText?: string }) => Promise<boolean>;
 }
 
-const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDelete, confirm }) => {
+const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDelete, onDataChanged, confirm }) => {
     const [selectedEmployee, setSelectedEmployee] = useState<string | null>(employees.length > 0 ? employees[0].id : null);
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('staff');
@@ -531,6 +533,10 @@ const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDe
         setIsSaving(true);
         try {
             await onSave(formData as Employee);
+            // Синхронизируем с App.tsx
+            if (onDataChanged) {
+                onDataChanged();
+            }
 
             setSaveModalType('success');
             // Автоматически закрываем окно успеха через 1.5 сек
@@ -1080,10 +1086,11 @@ interface StaffViewProps {
     legalEntities?: LegalEntity[];
     onSave?: (emp: Employee) => void;
     onDelete?: (emp: Employee) => void;
+    onDataChanged?: () => void;
     confirm?: (options: { title: string; message: string; confirmButtonText?: string }) => Promise<boolean>;
 }
 
-export const StaffView: React.FC<StaffViewProps> = ({ employees = [], legalEntities = [], onSave = () => { }, onDelete = () => { }, confirm }) => {
+export const StaffView: React.FC<StaffViewProps> = ({ employees = [], legalEntities = [], onSave = () => { }, onDelete = () => { }, onDataChanged, confirm }) => {
     const [activeTab, setActiveTab] = useState<StaffTab>('list');
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
@@ -1125,7 +1132,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ employees = [], legalEntit
             <div className="flex-1 min-h-0 p-4 bg-slate-50">
                 {activeTab === 'list' && <StaffListTab employees={employees} legalEntities={legalEntities} onSelectEmployee={handleSelectEmployee} />}
                 {activeTab === 'details' && <StaffDetailsTab employees={employees} employeeId={selectedEmployeeId} legalEntities={legalEntities} />}
-                {activeTab === 'manage' && <StaffManageTab employees={employees} onSave={onSave} onDelete={onDelete} confirm={confirm} />}
+                {activeTab === 'manage' && <StaffManageTab employees={employees} onSave={onSave} onDelete={onDelete} onDataChanged={onDataChanged} confirm={confirm} />}
             </div>
         </div>
     );

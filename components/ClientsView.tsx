@@ -117,11 +117,11 @@ const mockClients: Client[] = [
     {
         id: 'cli_001',
         name: 'ООО Ромашка',
-        legalForm: 'ooo',
+        legalForm: 'OOO',
         inn: '7712345678',
         kpp: '771201001',
         ogrn: '1027700000001',
-        taxSystem: 'usn6',
+        taxSystem: 'USN6',
         isNdsPayer: false,
         hasEmployees: true,
         employeeCount: 5,
@@ -148,9 +148,9 @@ const mockClients: Client[] = [
     {
         id: 'cli_002',
         name: 'ИП Сидоров А.В.',
-        legalForm: 'ip',
+        legalForm: 'IP',
         inn: '771234567890',
-        taxSystem: 'usn6',
+        taxSystem: 'USN6',
         isNdsPayer: false,
         hasEmployees: false,
         status: 'permanent',
@@ -177,11 +177,11 @@ const mockClients: Client[] = [
     {
         id: 'cli_003',
         name: 'ООО ТехноПром',
-        legalForm: 'ooo',
+        legalForm: 'OOO',
         inn: '7799887766',
         kpp: '779901001',
         ogrn: '1157700000123',
-        taxSystem: 'osn',
+        taxSystem: 'OSNO',
         isNdsPayer: true,
         ndsPercent: 20,
         hasEmployees: true,
@@ -209,10 +209,10 @@ const mockClients: Client[] = [
     {
         id: 'cli_004',
         name: 'ООО СтройМастер',
-        legalForm: 'ooo',
+        legalForm: 'OOO',
         inn: '7711223344',
         kpp: '771101001',
-        taxSystem: 'usn15',
+        taxSystem: 'USN15',
         isNdsPayer: false,
         hasEmployees: true,
         employeeCount: 3,
@@ -764,10 +764,10 @@ const ClientDetailsTab: React.FC<{
 
 
                         {/* Патенты (только для ИП) */}
-                        {client.legalForm === 'ip' && (
+                        {client.legalForm === 'IP' && (
                             <div className="bg-white rounded-lg border border-slate-200 p-3">
                                 <h3 className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100">Патенты</h3>
-                                <PatentsSection patents={client.patents || []} isIP={client.legalForm === 'ip'} />
+                                <PatentsSection patents={client.patents || []} isIP={client.legalForm === 'IP'} />
                             </div>
                         )}
 
@@ -873,21 +873,30 @@ const ClientDetailsTab: React.FC<{
 
                 {/* Список задач */}
                 <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 overflow-y-auto">
-                    <h3
-                        className="text-[10px] font-semibold text-slate-700 mb-2 pb-1 border-b border-slate-100 cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => onNavigateToTasks?.(selectedClientId, currentMonth)}
-                        title="Перейти в задачи"
-                    >
-                        Задачи → {selectedDate ? (
-                            <span className="text-slate-400 font-normal ml-1">
-                                ({selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })})
-                            </span>
-                        ) : (
-                            <span className="text-slate-400 font-normal ml-1">
-                                ({currentMonth.toLocaleDateString('ru-RU', { month: 'long' })})
-                            </span>
-                        )}
-                    </h3>
+                    <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
+                        <h3
+                            className="text-[10px] font-semibold text-slate-700 cursor-pointer hover:text-primary transition-colors"
+                            onClick={() => onNavigateToTasks?.(selectedClientId, currentMonth)}
+                            title="Перейти в задачи"
+                        >
+                            Задачи → {selectedDate ? (
+                                <span className="text-slate-400 font-normal ml-1">
+                                    ({selectedDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })})
+                                </span>
+                            ) : (
+                                <span className="text-slate-400 font-normal ml-1">
+                                    ({currentMonth.toLocaleDateString('ru-RU', { month: 'long' })})
+                                </span>
+                            )}
+                        </h3>
+                        <button
+                            className="w-5 h-5 flex items-center justify-center rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-sm font-bold"
+                            title="Добавить задачу"
+                            onClick={(e) => { e.stopPropagation(); /* TODO: открыть модалку создания задачи */ }}
+                        >
+                            +
+                        </button>
+                    </div>
                     {filteredTasks.length === 0 ? (
                         <div className="text-[10px] text-slate-400 text-center py-4">
                             {selectedDate ? 'Нет задач на эту дату' : 'Нет задач в этом месяце'}
@@ -1211,7 +1220,7 @@ const ClientManageTab: React.FC<{
                 legalForm: legalFormMapReverse[legalForm] || GlobalLegalForm.OOO,
                 name: formData.name,
                 inn: formData.inn,
-                kpp: legalForm !== 'ip' ? formData.kpp : undefined,
+                kpp: legalForm !== 'IP' ? formData.kpp : undefined,
                 ogrn: formData.ogrn,
                 createdAt: currentClient?.createdAt ? new Date(currentClient.createdAt) : new Date(),
 
@@ -1230,8 +1239,7 @@ const ClientManageTab: React.FC<{
                 employeeCount: hasEmployees ? parseInt(employeesCount) || 0 : undefined,
                 // Периодичность авансов по прибыли (только для ООО/АО на ОСНО)
                 // Используем нормализованные ID из справочника
-                // DEBUG: отладка сохранения
-                ...(console.log('[SAVE DEBUG] legalForm:', legalForm, 'taxSystem:', formData.taxSystem, 'profitAdvancePeriodicity:', profitAdvancePeriodicity) || {}),
+                // Периодичность
                 profitAdvancePeriodicity: (legalForm === 'OOO' || legalForm === 'AO') && formData.taxSystem === 'OSNO'
                     ? profitAdvancePeriodicity
                     : undefined,
@@ -1405,7 +1413,7 @@ const ClientManageTab: React.FC<{
     const handleAddNew = () => {
         setIsAddingNew(true);
         setSelectedClientId(null);
-        setLegalForm('ooo');
+        setLegalForm('OOO');
         setEditContacts([]);
         setEditCredentials([]);
         setIsNdsPayer(false);

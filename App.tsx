@@ -339,6 +339,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                 legalEntities={activeLegalEntities}
                 onSave={handleSaveEmployee}
                 onDelete={handleDeleteEmployee}
+                onDataChanged={reloadData}
                 confirm={confirm}
             />;
             case 'rules': return <RulesView isSuperAdmin={true} isAdmin={true} />;
