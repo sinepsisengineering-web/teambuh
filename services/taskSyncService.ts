@@ -1,11 +1,25 @@
 // services/taskSyncService.ts
 // Сервис синхронизации задач между генератором и SQLite хранилищем
 
-import { Task, LegalEntity, TaskStatus, TaskRule } from '../types';
+import { Task, LegalEntity, TaskStatus, TaskRule, TaskDueDateRule } from '../types';
 import { generateTasksForLegalEntity, updateTaskStatuses } from './taskGenerator';
 import * as taskStorage from './taskStorageService';
 import { StoredTask } from './taskStorageService';
 import { getRulesForGeneration, syncRulesOnLogin } from './rulesService';
+
+// Маппинг TaskDueDateRule <-> строка в БД
+const mapDueDateRuleToDb = (rule: TaskDueDateRule): string => {
+    return rule || 'next_business_day';
+};
+
+const mapDbToDueDateRule = (dbValue: string | undefined | null): TaskDueDateRule => {
+    switch (dbValue) {
+        case 'next_business_day': return TaskDueDateRule.NextBusinessDay;
+        case 'previous_business_day': return TaskDueDateRule.PreviousBusinessDay;
+        case 'no_transfer': return TaskDueDateRule.NoTransfer;
+        default: return TaskDueDateRule.NextBusinessDay;
+    }
+};
 
 // Кеш правил (чтобы не загружать при каждом клиенте)
 let cachedRules: TaskRule[] | null = null;
@@ -118,7 +132,9 @@ const taskToStoredTask = (
         originalDueDate: originalDate,  // Дата по правилу (до переноса)
         currentDueDate: currentDate,     // Дата после переноса
         rescheduledDates: null,
-        status
+        status,
+        completionLeadDays: task.completionLeadDays ?? 3,
+        dueDateRule: mapDueDateRuleToDb(task.dueDateRule),
     };
 };
 
@@ -155,12 +171,13 @@ export const storedTaskToTask = (storedTask: StoredTask): Task => {
         ruleId: storedTask.ruleId || undefined,                    // ID правила
         originalDueDate,  // Оригинальная дата по правилу
         dueDate,          // Текущая дата (после переноса)
-        dueDateRule: 'none' as any,
+        dueDateRule: mapDbToDueDateRule(storedTask.dueDateRule),
         repeat: storedTask.cyclePattern as any || 'none',
         reminder: '1w' as any,
         status,
         isAutomatic: storedTask.taskSource === 'auto',
         assignedTo: storedTask.assignedToId || undefined,
+        completionLeadDays: storedTask.completionLeadDays ?? 3,
     };
 };
 
@@ -221,7 +238,8 @@ export const syncTasksForLegalEntity = async (
                 assignedToName: t.assignedToName,
                 originalDueDate: t.originalDueDate,  // ← Оригинальная дата (25-е)
                 currentDueDate: t.currentDueDate,    // ← После переноса (27-е)
-                status: t.status
+                status: t.status,
+                completionLeadDays: t.completionLeadDays,
             }))
         );
 
@@ -277,6 +295,25 @@ export const syncAllTasks = async (legalEntities: LegalEntity[]): Promise<Task[]
             console.error(`[TaskSync] Error syncing tasks for ${entity.name}:`, error);
             // Продолжаем с остальными клиентами
         }
+    }
+
+    // === ЗАГРУЗКА РУЧНЫХ ЗАДАЧ ===
+    // Ручные задачи с clientId '__unassigned__' или привязанные к сотрудникам
+    // не попадают в итерацию по legalEntities — загружаем их отдельно
+    try {
+        const manualStored = await taskStorage.getAllTasks({ taskSource: 'manual' });
+        const existingIds = new Set(allTasks.map(t => t.id));
+
+        const manualTasks = manualStored
+            .filter(t => !existingIds.has(t.id)) // Не дублируем (клиентские manual уже загружены)
+            .map(storedTaskToTask);
+
+        if (manualTasks.length > 0) {
+            console.log(`[TaskSync] Added ${manualTasks.length} manual tasks`);
+            allTasks.push(...updateTaskStatuses(manualTasks));
+        }
+    } catch (error) {
+        console.error('[TaskSync] Error loading manual tasks:', error);
     }
 
     return allTasks;

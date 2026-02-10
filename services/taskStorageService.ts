@@ -38,6 +38,8 @@ export interface StoredTask {
     archivedAt: string | null;
     deletedAt: string | null;
     isDeleted: number;
+    completionLeadDays: number;
+    dueDateRule: string;  // 'next_business_day' | 'previous_business_day' | 'no_transfer'
 }
 
 export interface TaskStats {
@@ -54,6 +56,7 @@ export const getAllTasks = async (filters?: {
     status?: string;
     startDate?: string;
     endDate?: string;
+    taskSource?: string;
 }): Promise<StoredTask[]> => {
     try {
         const params = new URLSearchParams();
@@ -62,6 +65,7 @@ export const getAllTasks = async (filters?: {
         if (filters?.status) params.append('status', filters.status);
         if (filters?.startDate) params.append('startDate', filters.startDate);
         if (filters?.endDate) params.append('endDate', filters.endDate);
+        if (filters?.taskSource) params.append('taskSource', filters.taskSource);
 
         const queryString = params.toString();
         const url = `${SERVER_URL}/api/${TENANT_ID}/tasks${queryString ? `?${queryString}` : ''}`;
@@ -106,6 +110,9 @@ export const createTask = async (task: {
     assignedToName?: string;
     dueDate: string;
     status?: string;
+    completionLeadDays?: number;
+    ruleId?: string;
+    dueDateRule?: string;  // Правило переноса даты с выходных
 }): Promise<StoredTask | null> => {
     try {
         const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks`, {
@@ -147,6 +154,7 @@ export const createManyTasks = async (tasks: {
     originalDueDate: string;  // ← Оригинальная дата (из правила)
     currentDueDate: string;   // ← Текущая дата (после переноса)
     status?: string;
+    dueDateRule?: string;  // Правило переноса даты с выходных
 }[]): Promise<number> => {
     try {
         const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/bulk`, {
