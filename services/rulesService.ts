@@ -284,10 +284,11 @@ export const convertToTaskRule = (dbRule: DbRule): TaskRule => {
 
 /**
  * Получить все правила в формате TaskRule[] для генератора
+ * Шаблоны (storageCategory === 'шаблоны') не участвуют в автогенерации — только ручная привязка
  */
 export const getRulesForGeneration = async (tenantId = TENANT_ID): Promise<TaskRule[]> => {
     const dbRules = await getAllRules(tenantId);
-    return dbRules.filter(r => r.isActive && !r.manualOnly).map(convertToTaskRule);
+    return dbRules.filter(r => r.isActive && r.storageCategory !== 'шаблоны').map(convertToTaskRule);
 };
 
 // ==========================================

@@ -1,8 +1,9 @@
 // components/TasksView.tsx
 // Новый модуль управления задачами с каскадной фильтрацией
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Task, TaskStatus, LegalEntity, Employee } from '../types';
+import { getAllRules } from '../services/rulesService';
 import { MiniCalendar } from './MiniCalendar';
 import { TaskCompletionModal } from './TaskCompletionModal';
 import { ClientListModal } from './ClientListModal';
@@ -10,6 +11,7 @@ import { useTaskModal } from '../contexts/TaskModalContext';
 import { getPriorityBarColor } from '../services/taskIndicators';
 import { canCompleteTask, isTaskLocked, getBlockingPredecessor } from '../services/taskGenerator';
 import { TaskCreateTab } from './TaskCreateTab';
+import { CalendarTab } from './CalendarTab';
 
 // ============================================
 // ТИПЫ
@@ -30,9 +32,12 @@ interface TasksViewProps {
     onToggleComplete?: (taskId: string) => void;
     onDeleteTask?: (taskId: string) => void;
     onReassignTask?: (taskId: string, newAssigneeId: string | null) => void;
-    onNavigateToClient?: (clientId: string) => void; // Переход на страницу клиента
-    initialClientId?: string | null; // Для предустановки фильтра клиента
-    onTaskCreated?: () => void; // Колбэк после создания задачи
+    onReassignSeries?: (seriesId: string, newAssigneeId: string | null) => void;
+    onReassignClient?: (clientId: string, newAccountantId: string | null) => void;
+    onMoveTask?: (taskId: string, newDate: Date, options?: { isFloating?: boolean }) => void;
+    onNavigateToClient?: (clientId: string) => void;
+    initialClientId?: string | null;
+    onTaskCreated?: () => void;
 }
 
 // Состояние фильтров
@@ -231,8 +236,12 @@ const TaskRow: React.FC<TaskRowProps> = ({
             </button>
 
             {/* 8. Срок */}
-            <div className="w-14 text-xs text-slate-700 text-center font-semibold flex-shrink-0">
-                {formatDate(task.dueDate)}
+            <div className="w-14 text-xs text-center font-semibold flex-shrink-0">
+                {task.isFloating ? (
+                    <span className="text-amber-500 text-base" title="Плавающая задача — переносится автоматически">∞</span>
+                ) : (
+                    <span className="text-slate-700">{formatDate(task.dueDate)}</span>
+                )}
             </div>
 
             {/* 9. Действия */}
@@ -261,9 +270,9 @@ const TaskRow: React.FC<TaskRowProps> = ({
                     </button>
                 )}
                 <button
-                    disabled
-                    className="w-6 h-6 flex items-center justify-center text-slate-300 cursor-not-allowed rounded transition-colors flex-shrink-0"
-                    title="Удаление временно отключено — в разработке"
+                    onClick={onDelete}
+                    className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0"
+                    title="Удалить"
                 >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -423,6 +432,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
     onToggleComplete,
     onDeleteTask,
     onReassignTask,
+    onReassignSeries,
+    onReassignClient,
+    onMoveTask,
     onNavigateToClient,
     initialClientId,
     onTaskCreated,
@@ -535,6 +547,55 @@ export const TasksView: React.FC<TasksViewProps> = ({
         clients: { id: string; name: string; taskId: string }[];
         taskTitle: string;
     } | null>(null);
+
+    // Состояние модалки подтверждения удаления
+    const [deleteConfirm, setDeleteConfirm] = useState<{
+        isOpen: boolean;
+        taskTitle: string;
+        taskIds: string[];
+    } | null>(null);
+
+    // Состояние модалки переназначения
+    const [reassignModal, setReassignModal] = useState<{
+        isOpen: boolean;
+        taskTitle: string;
+        taskIds: string[];
+        currentAssignee: string | null;
+        selectedEmployeeId: string;
+        scope: 'task' | 'series' | 'client';
+        seriesId?: string;
+        clientId?: string;
+        isCyclic: boolean;
+        isSingleClient: boolean;
+    } | null>(null);
+
+    // Состояние модалки переноса даты
+    const [moveModal, setMoveModal] = useState<{
+        isOpen: boolean;
+        taskTitle: string;
+        taskIds: string[];
+        currentDate: Date;
+        newDate: string; // yyyy-mm-dd для input[type=date]
+        // --- Расширенные поля ---
+        isTaxTask: boolean;        // Налоговая задача — запрет переноса
+        isCyclic: boolean;         // Циклическая (seriesId есть)
+        seriesId?: string;         // ID серии
+        hasSiblings: boolean;      // Есть другие клиенты с такой же задачей
+        scope: 'single' | 'series'; // Только эту / весь цикл
+        clientScope: 'all' | 'one'; // Для всех клиентов / только для выбранного
+        allSeriesTaskIds: string[]; // ID всех задач в серии (для scope=series)
+    } | null>(null);
+
+    // Кэш ID налоговых правил — загружаем один раз
+    const [taxRuleIds, setTaxRuleIds] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        getAllRules().then(rules => {
+            const ids = new Set<string>();
+            rules.forEach(r => { if (r.storageCategory === 'налоговые') ids.add(r.id); });
+            setTaxRuleIds(ids);
+            console.log('[TasksView] Loaded', ids.size, 'tax rule IDs');
+        }).catch(err => console.error('[TasksView] Failed to load rules:', err));
+    }, []);
 
     // Обработчик клика на "Выполнить"
     const handleCompleteClick = (group: GroupedTask) => {
@@ -683,7 +744,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
         , [tasksInMonth, clientMap]);
 
     // Вкладки
-    const [activeTab, setActiveTab] = useState<'list' | 'create'>('list');
+    const [activeTab, setActiveTab] = useState<'list' | 'create' | 'calendar'>('list');
+    const [prefillDate, setPrefillDate] = useState<string | null>(null);
 
     // Редактируемая задача
     interface EditingTaskData {
@@ -729,6 +791,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                 <nav className="flex gap-1">
                     {[
                         { id: 'list' as const, label: '📋 Список задач' },
+                        { id: 'calendar' as const, label: '📅 Календарь' },
                         { id: 'create' as const, label: '➕ Добавить задачу' },
                     ].map(tab => (
                         <button
@@ -753,9 +816,22 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         employees={employees}
                         onTaskCreated={() => {
                             setEditingTask(null);
+                            setPrefillDate(null);
                             onTaskCreated?.();
                         }}
                         editingTask={editingTask}
+                        prefillDate={prefillDate}
+                    />
+                ) : activeTab === 'calendar' ? (
+                    <CalendarTab
+                        tasks={tasks}
+                        legalEntities={legalEntities}
+                        employees={employees}
+                        onAddTask={(date) => {
+                            const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                            setPrefillDate(iso);
+                            setActiveTab('create');
+                        }}
                     />
                 ) : (
                     <>
@@ -834,13 +910,59 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                                     isBlocked={taskIsBlocked}
                                                     blockReason={blockReasonText}
                                                     onDelete={() => {
-                                                        // Удаляем все задачи в группе
-                                                        group.clients.forEach(c => onDeleteTask?.(c.taskId));
+                                                        setDeleteConfirm({
+                                                            isOpen: true,
+                                                            taskTitle: group.baseTask.title,
+                                                            taskIds: group.clients.map(c => c.taskId),
+                                                        });
                                                     }}
-                                                    onReassign={() => console.log('Reassign group:', group.key)}
-                                                    onMove={() => console.log('Move group:', group.key)}
+                                                    onReassign={() => setReassignModal({
+                                                        isOpen: true,
+                                                        taskTitle: group.baseTask.title,
+                                                        taskIds: group.clients.map(c => c.taskId),
+                                                        currentAssignee: effectiveAssignee,
+                                                        selectedEmployeeId: effectiveAssignee || '',
+                                                        scope: 'task',
+                                                        seriesId: group.baseTask.seriesId,
+                                                        clientId: group.clients.length === 1 ? group.clients[0].id : undefined,
+                                                        isCyclic: group.baseTask.repeat !== 'none',
+                                                        isSingleClient: group.clients.length === 1,
+                                                    })}
+                                                    onMove={() => {
+                                                        const isTax = !!(group.baseTask.ruleId && taxRuleIds.has(group.baseTask.ruleId));
+                                                        const isCyclic = group.baseTask.repeat !== 'none' && !!group.baseTask.seriesId;
+                                                        // Собираем все задачи серии из текущего набора
+                                                        const allSeriesIds = isCyclic
+                                                            ? tasks.filter(t => t.seriesId === group.baseTask.seriesId).map(t => t.id)
+                                                            : [];
+                                                        setMoveModal({
+                                                            isOpen: true,
+                                                            taskTitle: group.baseTask.title,
+                                                            taskIds: group.clients.map(c => c.taskId),
+                                                            currentDate: group.baseTask.dueDate,
+                                                            newDate: new Date(group.baseTask.dueDate).toISOString().split('T')[0],
+                                                            isTaxTask: isTax,
+                                                            isCyclic,
+                                                            seriesId: group.baseTask.seriesId,
+                                                            hasSiblings: group.clients.length > 1,
+                                                            scope: 'single',
+                                                            clientScope: 'all',
+                                                            allSeriesTaskIds: allSeriesIds,
+                                                        });
+                                                    }}
                                                     onClientClick={() => handleClientCountClick(group)}
-                                                    onEmployeeClick={() => console.log('Employee:', effectiveAssignee)}
+                                                    onEmployeeClick={() => setReassignModal({
+                                                        isOpen: true,
+                                                        taskTitle: group.baseTask.title,
+                                                        taskIds: group.clients.map(c => c.taskId),
+                                                        currentAssignee: effectiveAssignee,
+                                                        selectedEmployeeId: effectiveAssignee || '',
+                                                        scope: 'task',
+                                                        seriesId: group.baseTask.seriesId,
+                                                        clientId: group.clients.length === 1 ? group.clients[0].id : undefined,
+                                                        isCyclic: group.baseTask.repeat !== 'none',
+                                                        isSingleClient: group.clients.length === 1,
+                                                    })}
                                                     onTaskClick={() => openTaskModal({
                                                         id: group.baseTask.id,
                                                         title: group.baseTask.title,
@@ -855,6 +977,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                                         isCompleted: group.baseTask.status === TaskStatus.Completed,
                                                         isAutomatic: group.baseTask.isAutomatic,
                                                         ruleId: group.baseTask.ruleId,
+                                                        isFloating: group.baseTask.isFloating,
                                                     })}
                                                 />
                                             );
@@ -934,6 +1057,354 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                 />
                             )
                         }
+
+                        {/* Модалка подтверждения удаления */}
+                        {deleteConfirm?.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setDeleteConfirm(null)}>
+                                <div className="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+                                    <div className="text-center">
+                                        <div className="text-4xl mb-3">🗑️</div>
+                                        <h3 className="text-lg font-bold text-slate-800 mb-2">Удалить задачу?</h3>
+                                        <p className="text-sm text-slate-500 mb-4">
+                                            «{deleteConfirm.taskTitle}»
+                                            {deleteConfirm.taskIds.length > 1 && (
+                                                <span className="block mt-1 text-orange-500 font-medium">
+                                                    Будет удалено {deleteConfirm.taskIds.length} задач для всех клиентов
+                                                </span>
+                                            )}
+                                        </p>
+                                        <div className="flex gap-3">
+                                            <button
+                                                onClick={() => setDeleteConfirm(null)}
+                                                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                                            >
+                                                Отмена
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    deleteConfirm.taskIds.forEach(id => onDeleteTask?.(id));
+                                                    setDeleteConfirm(null);
+                                                }}
+                                                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+                                            >
+                                                Удалить
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Модалка переназначения */}
+                        {reassignModal?.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setReassignModal(null)}>
+                                <div className="bg-white rounded-xl p-6 shadow-2xl max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+                                    <h3 className="text-lg font-bold text-slate-800 mb-1">↔️ Переназначить</h3>
+                                    <p className="text-sm text-slate-500 mb-4 truncate">«{reassignModal.taskTitle}»</p>
+
+                                    {/* Выбор сотрудника */}
+                                    <div className="mb-4">
+                                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Кому назначить</label>
+                                        <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                                            <button
+                                                onClick={() => setReassignModal(prev => prev ? { ...prev, selectedEmployeeId: '' } : null)}
+                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${reassignModal.selectedEmployeeId === ''
+                                                    ? 'bg-primary/10 text-primary font-semibold border border-primary/30'
+                                                    : 'hover:bg-slate-50 text-slate-600'
+                                                    }`}
+                                            >
+                                                <span className="text-base">👤</span>
+                                                <span>Не распределена</span>
+                                            </button>
+
+                                            {employees.map(emp => (
+                                                <button
+                                                    key={emp.id}
+                                                    onClick={() => setReassignModal(prev => prev ? { ...prev, selectedEmployeeId: emp.id } : null)}
+                                                    className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${reassignModal.selectedEmployeeId === emp.id
+                                                        ? 'bg-primary/10 text-primary font-semibold border border-primary/30'
+                                                        : 'hover:bg-slate-50 text-slate-600'
+                                                        }`}
+                                                >
+                                                    <span className="text-base">👩‍💼</span>
+                                                    <span>{emp.lastName} {emp.firstName}</span>
+                                                    {emp.id === reassignModal.currentAssignee && (
+                                                        <span className="ml-auto text-xs text-slate-400">текущий</span>
+                                                    )}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Выбор области */}
+                                    <div className="mb-4">
+                                        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Область</label>
+                                        <div className="space-y-2">
+                                            <label className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-sm">
+                                                <input
+                                                    type="radio"
+                                                    name="reassign-scope"
+                                                    checked={reassignModal.scope === 'task'}
+                                                    onChange={() => setReassignModal(prev => prev ? { ...prev, scope: 'task' } : null)}
+                                                    className="accent-primary"
+                                                />
+                                                <span>🔹 Только эту задачу</span>
+                                            </label>
+
+                                            {reassignModal.isCyclic && reassignModal.seriesId && (
+                                                <label className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-sm">
+                                                    <input
+                                                        type="radio"
+                                                        name="reassign-scope"
+                                                        checked={reassignModal.scope === 'series'}
+                                                        onChange={() => setReassignModal(prev => prev ? { ...prev, scope: 'series' } : null)}
+                                                        className="accent-primary"
+                                                    />
+                                                    <span>🔄 Все задачи в серии</span>
+                                                </label>
+                                            )}
+
+                                            {reassignModal.isSingleClient && reassignModal.clientId && (
+                                                <label className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-sm">
+                                                    <input
+                                                        type="radio"
+                                                        name="reassign-scope"
+                                                        checked={reassignModal.scope === 'client'}
+                                                        onChange={() => setReassignModal(prev => prev ? { ...prev, scope: 'client' } : null)}
+                                                        className="accent-primary"
+                                                    />
+                                                    <span>👤 Переназначить клиента</span>
+                                                    <span className="ml-auto text-xs text-slate-400">все задачи клиента</span>
+                                                </label>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => setReassignModal(null)}
+                                            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                                        >
+                                            Отмена
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                const newId = reassignModal.selectedEmployeeId || null;
+                                                if (reassignModal.scope === 'series' && reassignModal.seriesId) {
+                                                    onReassignSeries?.(reassignModal.seriesId, newId);
+                                                } else if (reassignModal.scope === 'client' && reassignModal.clientId) {
+                                                    onReassignClient?.(reassignModal.clientId, newId);
+                                                } else {
+                                                    reassignModal.taskIds.forEach(id => onReassignTask?.(id, newId));
+                                                }
+                                                setReassignModal(null);
+                                            }}
+                                            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors"
+                                        >
+                                            Назначить
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Модалка переноса даты */}
+                        {moveModal?.isOpen && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setMoveModal(null)}>
+                                <div className="bg-white rounded-xl p-6 shadow-2xl max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+                                    <h3 className="text-lg font-bold text-slate-800 mb-1">📅 Перенести задачу</h3>
+                                    <p className="text-sm text-slate-500 mb-4 truncate">«{moveModal.taskTitle}»</p>
+
+                                    {/* Текущий срок */}
+                                    <div className="mb-3">
+                                        <label className="block text-xs font-medium text-slate-500 mb-0.5">Текущий срок</label>
+                                        <div className="text-sm text-slate-800 font-semibold">
+                                            {new Date(moveModal.currentDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                        </div>
+                                    </div>
+
+                                    {/* ⚠️ ПРЕДУПРЕЖДЕНИЕ — налоговая задача */}
+                                    {moveModal.isTaxTask && (
+                                        <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200">
+                                            <div className="flex items-start gap-2">
+                                                <span className="text-lg">⚠️</span>
+                                                <div>
+                                                    <p className="text-sm font-semibold text-red-700">Налоговая задача</p>
+                                                    <p className="text-xs text-red-600 mt-0.5">
+                                                        Сроки налоговых задач установлены законодательством и не подлежат переносу.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Если НЕ налоговая — показываем опции переноса */}
+                                    {!moveModal.isTaxTask && (
+                                        <>
+                                            {/* Scope: циклическая задача */}
+                                            {moveModal.isCyclic && (
+                                                <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                                                    <p className="text-xs font-semibold text-slate-600 mb-2">🔄 Циклическая задача</p>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                            <input
+                                                                type="radio" name="moveScope"
+                                                                checked={moveModal.scope === 'single'}
+                                                                onChange={() => setMoveModal(prev => prev ? { ...prev, scope: 'single' } : null)}
+                                                                className="accent-primary"
+                                                            />
+                                                            Только эту задачу
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                            <input
+                                                                type="radio" name="moveScope"
+                                                                checked={moveModal.scope === 'series'}
+                                                                onChange={() => setMoveModal(prev => prev ? { ...prev, scope: 'series' } : null)}
+                                                                className="accent-primary"
+                                                            />
+                                                            Весь цикл ({moveModal.allSeriesTaskIds.length} задач)
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Scope: несколько клиентов */}
+                                            {moveModal.hasSiblings && (
+                                                <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                                                    <p className="text-xs font-semibold text-slate-600 mb-2">👥 Несколько клиентов ({moveModal.taskIds.length})</p>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                            <input
+                                                                type="radio" name="clientScope"
+                                                                checked={moveModal.clientScope === 'all'}
+                                                                onChange={() => setMoveModal(prev => prev ? { ...prev, clientScope: 'all' } : null)}
+                                                                className="accent-primary"
+                                                            />
+                                                            Для всех клиентов
+                                                        </label>
+                                                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                            <input
+                                                                type="radio" name="clientScope"
+                                                                checked={moveModal.clientScope === 'one'}
+                                                                onChange={() => setMoveModal(prev => prev ? { ...prev, clientScope: 'one' } : null)}
+                                                                className="accent-primary"
+                                                            />
+                                                            Только для текущего
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Быстрый перенос */}
+                                            <div className="mb-3">
+                                                <label className="block text-xs font-semibold text-slate-600 mb-2">⏱ Быстрый перенос</label>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    {[
+                                                        { label: '+1 день', days: 1 },
+                                                        { label: '+1 неделя', days: 7 },
+                                                        { label: '+1 месяц', days: 30 },
+                                                    ].map(opt => {
+                                                        const d = new Date(moveModal.currentDate);
+                                                        d.setDate(d.getDate() + opt.days);
+                                                        const iso = d.toISOString().split('T')[0];
+                                                        return (
+                                                            <button
+                                                                key={opt.days}
+                                                                onClick={() => setMoveModal(prev => prev ? { ...prev, newDate: iso } : null)}
+                                                                className={`px-2 py-2 rounded-lg text-xs font-medium border transition-colors ${moveModal.newDate === iso
+                                                                    ? 'bg-primary text-white border-primary'
+                                                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                                                    }`}
+                                                            >
+                                                                {opt.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* Точная дата */}
+                                            <div className="mb-3">
+                                                <label className="block text-xs font-semibold text-slate-600 mb-1">📅 Точная дата</label>
+                                                <input
+                                                    type="date"
+                                                    value={moveModal.newDate}
+                                                    onChange={e => setMoveModal(prev => prev ? { ...prev, newDate: e.target.value } : null)}
+                                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+                                                />
+                                            </div>
+
+                                            {/* Отвязать от даты */}
+                                            <button
+                                                onClick={() => {
+                                                    const idsToMove = moveModal.clientScope === 'all'
+                                                        ? (moveModal.scope === 'series' ? moveModal.allSeriesTaskIds : moveModal.taskIds)
+                                                        : [moveModal.taskIds[0]];
+                                                    // Ставим isFloating=true и dueDate=сегодня
+                                                    const today = new Date();
+                                                    today.setHours(0, 0, 0, 0);
+                                                    idsToMove.forEach(id => onMoveTask?.(id, today, { isFloating: true }));
+                                                    // TODO: отдельный API для isFloating, пока визуально
+                                                    setMoveModal(null);
+                                                }}
+                                                className="w-full mb-4 px-3 py-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 text-sm text-amber-700 hover:bg-amber-100 transition-colors text-left"
+                                            >
+                                                <span className="font-semibold">⏸ Отвязать от даты</span>
+                                                <span className="block text-xs text-amber-600 mt-0.5">
+                                                    Задача будет автоматически переноситься на текущий день
+                                                </span>
+                                            </button>
+                                        </>
+                                    )}
+
+                                    {/* Кнопки */}
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => setMoveModal(null)}
+                                            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                                        >
+                                            {moveModal.isTaxTask ? 'Закрыть' : 'Отмена'}
+                                        </button>
+                                        {!moveModal.isTaxTask && (
+                                            <button
+                                                onClick={() => {
+                                                    const newDate = new Date(moveModal.newDate + 'T00:00:00');
+                                                    if (isNaN(newDate.getTime())) return;
+
+                                                    // Определяем дельту для серии
+                                                    const currentMs = new Date(moveModal.currentDate).getTime();
+                                                    const deltaMs = newDate.getTime() - currentMs;
+
+                                                    if (moveModal.scope === 'series' && moveModal.allSeriesTaskIds.length > 0) {
+                                                        // Перенос всей серии — сдвигаем каждую задачу на дельту
+                                                        const seriesIds = moveModal.clientScope === 'all'
+                                                            ? moveModal.allSeriesTaskIds
+                                                            : moveModal.taskIds; // Только текущие
+                                                        seriesIds.forEach(id => {
+                                                            const existingTask = tasks.find(t => t.id === id);
+                                                            if (existingTask) {
+                                                                const shifted = new Date(new Date(existingTask.dueDate).getTime() + deltaMs);
+                                                                onMoveTask?.(id, shifted);
+                                                            }
+                                                        });
+                                                    } else {
+                                                        // Перенос только текущей задачи
+                                                        const idsToMove = moveModal.clientScope === 'all'
+                                                            ? moveModal.taskIds
+                                                            : [moveModal.taskIds[0]];
+                                                        idsToMove.forEach(id => onMoveTask?.(id, newDate));
+                                                    }
+                                                    setMoveModal(null);
+                                                }}
+                                                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors"
+                                            >
+                                                Перенести
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </>
                 )}
             </div>

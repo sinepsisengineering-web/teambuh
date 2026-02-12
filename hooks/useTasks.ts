@@ -191,6 +191,74 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
     }
   }, [tasks, isDBAvailable]);
 
+  // Переназначение задачи на другого сотрудника
+  const handleReassignTask = useCallback(async (taskId: string, newAssigneeId: string | null) => {
+    setTasks(currentTasks => {
+      const newTasks = currentTasks.map(t => {
+        if (t.id === taskId) {
+          return { ...t, assignedTo: newAssigneeId };
+        }
+        return t;
+      });
+      return updateTaskStatuses(newTasks);
+    });
+
+    // Обновляем в БД
+    if (isDBAvailable) {
+      await taskStorage.updateTask(taskId, {
+        assignedToId: newAssigneeId,
+      });
+    }
+  }, [isDBAvailable]);
+
+  // Переназначение всей серии (все задачи с тем же seriesId)
+  const handleReassignSeries = useCallback(async (seriesId: string, newAssigneeId: string | null) => {
+    const tasksInSeries: string[] = [];
+
+    setTasks(currentTasks => {
+      const newTasks = currentTasks.map(t => {
+        if (t.seriesId === seriesId) {
+          tasksInSeries.push(t.id);
+          return { ...t, assignedTo: newAssigneeId };
+        }
+        return t;
+      });
+      return updateTaskStatuses(newTasks);
+    });
+
+    // Обновляем каждую задачу серии в БД
+    if (isDBAvailable) {
+      for (const taskId of tasksInSeries) {
+        await taskStorage.updateTask(taskId, {
+          assignedToId: newAssigneeId,
+        });
+      }
+    }
+  }, [isDBAvailable]);
+
+  // Перенос задачи на новую дату (с опциональной поддержкой floating)
+  const handleMoveTask = useCallback(async (taskId: string, newDate: Date, options?: { isFloating?: boolean }) => {
+    const isFloating = options?.isFloating ?? false;
+
+    setTasks(currentTasks => {
+      const newTasks = currentTasks.map(t => {
+        if (t.id === taskId) {
+          return { ...t, dueDate: newDate, isFloating };
+        }
+        return t;
+      });
+      return updateTaskStatuses(newTasks);
+    });
+
+    // Обновляем в БД
+    if (isDBAvailable) {
+      await taskStorage.updateTask(taskId, {
+        currentDueDate: newDate.toISOString().split('T')[0],
+        isFloating,
+      } as any);
+    }
+  }, [isDBAvailable]);
+
   const handleOpenNewTaskForm = useCallback((defaultValues?: Partial<Task>) => {
     const date = defaultValues?.dueDate instanceof Date ? defaultValues.dueDate : new Date();
     const newTaskScaffold: Partial<Task> = {
@@ -261,6 +329,9 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
     handleToggleComplete, handleDeleteTask, handleBulkComplete,
     handleBulkDelete,
     handleDeleteTasksForLegalEntity,
+    handleReassignTask,
+    handleReassignSeries,
+    handleMoveTask,
     isDBAvailable,
     refreshTasks,
   };

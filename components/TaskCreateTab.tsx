@@ -32,6 +32,7 @@ interface TaskCreateTabProps {
     employees: Employee[];
     onTaskCreated?: () => void;  // Колбэк после создания задачи (для обновления списка)
     editingTask?: EditingTaskInput | null;  // Задача для редактирования
+    prefillDate?: string | null; // Предзаполненная дата из календаря (YYYY-MM-DD)
 }
 
 // ============================================
@@ -43,6 +44,7 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
     employees,
     onTaskCreated,
     editingTask,
+    prefillDate,
 }) => {
     // --- Режим редактирования ---
     const isEditMode = !!editingTask;
@@ -57,7 +59,7 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
     const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
 
     // Дата
-    const [dueDate, setDueDate] = useState('');
+    const [dueDate, setDueDate] = useState(prefillDate || '');
     const [showCalendar, setShowCalendar] = useState(false);
     const [calendarMonth, setCalendarMonth] = useState(new Date());
 
@@ -1056,8 +1058,8 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
                                         key={tab.id}
                                         onClick={() => setPickerFilter(tab.id)}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${pickerFilter === tab.id
-                                                ? 'bg-primary text-white'
-                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            ? 'bg-primary text-white'
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                             }`}
                                     >
                                         {tab.label}
@@ -1086,21 +1088,21 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
                                             key={rule.id}
                                             onClick={() => applyRule(rule)}
                                             className={`w-full text-left p-3 border rounded-lg hover:shadow-md transition-all ${isTemplateItem
-                                                    ? 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
-                                                    : 'bg-white border-slate-200 hover:border-primary'
+                                                ? 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
+                                                : 'bg-white border-slate-200 hover:border-primary'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-xs px-2 py-0.5 rounded-full ${isTemplateItem
-                                                        ? 'bg-amber-100 text-amber-600'
-                                                        : 'bg-slate-100 text-slate-500'
+                                                    ? 'bg-amber-100 text-amber-600'
+                                                    : 'bg-slate-100 text-slate-500'
                                                     }`}>
                                                     {categoryIcon}
                                                 </span>
                                                 <span className="font-medium text-slate-900 text-sm">{rule.shortTitle}</span>
                                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ml-auto ${isTemplateItem
-                                                        ? 'text-amber-600 bg-amber-100'
-                                                        : 'text-slate-500 bg-slate-100'
+                                                    ? 'text-amber-600 bg-amber-100'
+                                                    : 'text-slate-500 bg-slate-100'
                                                     }`}>
                                                     {categoryLabel}
                                                 </span>

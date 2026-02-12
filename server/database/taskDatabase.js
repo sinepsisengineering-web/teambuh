@@ -88,6 +88,10 @@ const initDatabase = (tenantId = 'org_default') => {
         db.exec("ALTER TABLE tasks ADD COLUMN due_date_rule TEXT DEFAULT 'next_business_day'");
         console.log('[TaskDB] Added column: due_date_rule');
     } catch (e) { /* Колонка уже существует */ }
+    try {
+        db.exec('ALTER TABLE tasks ADD COLUMN is_floating INTEGER DEFAULT 0');
+        console.log('[TaskDB] Added column: is_floating');
+    } catch (e) { /* Колонка уже существует */ }
 
     console.log('[TaskDB] Database initialized:', dbPath);
     return db;
@@ -113,7 +117,9 @@ const mapRowToTask = (row) => {
         completedById: row.completed_by_id,
         completedByName: row.completed_by_name,
         originalDueDate: row.original_due_date,
-        currentDueDate: row.current_due_date,
+        currentDueDate: (row.is_floating === 1 && row.status !== 'completed')
+            ? new Date().toISOString().split('T')[0]
+            : row.current_due_date,
         rescheduledDates: row.rescheduled_dates,
         status: row.status,
         createdAt: row.created_at,
@@ -122,7 +128,8 @@ const mapRowToTask = (row) => {
         deletedAt: row.deleted_at,
         isDeleted: row.is_deleted,
         completionLeadDays: row.completion_lead_days ?? 3,
-        dueDateRule: row.due_date_rule || 'next_business_day'
+        dueDateRule: row.due_date_rule || 'next_business_day',
+        isFloating: row.is_floating === 1
     };
 };
 
@@ -340,6 +347,10 @@ class TaskDatabase {
         if (updates.cyclePattern !== undefined) {
             fields.push('cycle_pattern = @cyclePattern');
             values.cyclePattern = updates.cyclePattern;
+        }
+        if (updates.isFloating !== undefined) {
+            fields.push('is_floating = @isFloating');
+            values.isFloating = updates.isFloating ? 1 : 0;
         }
 
         if (fields.length === 0) return this.getById(id);

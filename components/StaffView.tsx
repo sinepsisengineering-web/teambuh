@@ -292,6 +292,7 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
                                                 clientName: task.clientName ?? undefined,
                                                 dueDate: task.currentDueDate,
                                                 status: task.status,
+                                                isFloating: task.isFloating,
                                             })}
                                         >
                                             <div className="text-sm font-medium leading-tight truncate">{task.title}</div>

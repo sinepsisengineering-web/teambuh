@@ -40,6 +40,7 @@ export interface StoredTask {
     isDeleted: number;
     completionLeadDays: number;
     dueDateRule: string;  // 'next_business_day' | 'previous_business_day' | 'no_transfer'
+    isFloating: boolean;  // Плавающая задача — автоматически переносится на "сегодня"
 }
 
 export interface TaskStats {

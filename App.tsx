@@ -136,8 +136,22 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
         handleSaveTask, handleOpenNewTaskForm,
         handleToggleComplete, handleDeleteTask,
         handleBulkComplete, handleBulkDelete, handleDeleteTasksForLegalEntity,
+        handleReassignTask, handleReassignSeries, handleMoveTask,
         refreshTasks,
     } = useTasks(activeLegalEntities, legalEntityMap);
+
+    // Переназначение клиента — меняем accountantId
+    const handleReassignClient = async (clientId: string, newAccountantId: string | null) => {
+        const client = legalEntities.find(le => le.id === clientId);
+        if (!client) return;
+        const updated = { ...client, accountantId: newAccountantId || undefined };
+        try {
+            const saved = await storage.saveClient(updated);
+            setLegalEntities(prev => prev.map(le => le.id === saved.id ? saved : le));
+        } catch (error) {
+            console.error('Failed to reassign client:', error);
+        }
+    };
 
     // Подключаем обработчик выполнения задачи к модальному контексту
     const { setOnComplete } = useTaskModal();
@@ -313,6 +327,10 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                     employees={employees}
                     onToggleComplete={(taskId) => handleToggleComplete(taskId)}
                     onDeleteTask={(taskId) => handleDeleteTask(taskId)}
+                    onReassignTask={(taskId, newAssigneeId) => handleReassignTask(taskId, newAssigneeId)}
+                    onReassignSeries={(seriesId, newAssigneeId) => handleReassignSeries(seriesId, newAssigneeId)}
+                    onReassignClient={(clientId, newAccountantId) => handleReassignClient(clientId, newAccountantId)}
+                    onMoveTask={(taskId, newDate, options) => handleMoveTask(taskId, newDate, options)}
                     onNavigateToClient={(clientId) => {
                         setNavigateToClientId(clientId);
                         setActiveView('clients');

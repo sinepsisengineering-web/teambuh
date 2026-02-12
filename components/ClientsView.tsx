@@ -932,6 +932,7 @@ const ClientDetailsTab: React.FC<{
                                             clientName: task.clientName ?? undefined,
                                             dueDate: task.currentDueDate,
                                             status: task.status,
+                                            isFloating: task.isFloating,
                                         })}
                                     >
                                         <div className="flex items-center gap-1.5">

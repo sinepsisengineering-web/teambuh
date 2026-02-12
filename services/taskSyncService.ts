@@ -155,11 +155,20 @@ export const storedTaskToTask = (storedTask: StoredTask): Task => {
 
     // Парсим текущую дату (после переноса)
     const [year, month, day] = storedTask.currentDueDate.split('-').map(Number);
-    const dueDate = new Date(year, month - 1, day);
+    let dueDate = new Date(year, month - 1, day);
 
     // Парсим оригинальную дату (до переноса)
     const [origYear, origMonth, origDay] = storedTask.originalDueDate.split('-').map(Number);
     const originalDueDate = new Date(origYear, origMonth - 1, origDay);
+
+    const isFloating = storedTask.isFloating === true;
+
+    // Плавающие задачи всегда переносятся на «сегодня»
+    if (isFloating && storedTask.status !== 'completed') {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        dueDate = today;
+    }
 
     return {
         id: storedTask.id,
@@ -170,7 +179,7 @@ export const storedTaskToTask = (storedTask: StoredTask): Task => {
         legalBasis: storedTask.legalBasis || undefined,            // Основание (ссылка на закон)
         ruleId: storedTask.ruleId || undefined,                    // ID правила
         originalDueDate,  // Оригинальная дата по правилу
-        dueDate,          // Текущая дата (после переноса)
+        dueDate,          // Текущая дата (после переноса) — для floating = сегодня
         dueDateRule: mapDbToDueDateRule(storedTask.dueDateRule),
         repeat: storedTask.cyclePattern as any || 'none',
         reminder: '1w' as any,
@@ -178,6 +187,7 @@ export const storedTaskToTask = (storedTask: StoredTask): Task => {
         isAutomatic: storedTask.taskSource === 'auto',
         assignedTo: storedTask.assignedToId || undefined,
         completionLeadDays: storedTask.completionLeadDays ?? 3,
+        isFloating,
     };
 };
 
