@@ -301,3 +301,36 @@ export interface TaskRule {
   updatedAt?: string;
   isActive?: boolean;
 }
+
+// === SERVICES TYPES ===
+
+export type ServicePeriodicity = 'once' | 'monthly' | 'quarterly' | 'yearly';
+export type TargetEntityType = 'IP' | 'OOO' | 'AO' | 'all';
+
+export interface Service {
+  id: string;
+  orgId: string;
+  name: string;
+  description?: string;
+  price: number;
+  unit?: string;               // единица измерения (документы, сотрудники, шт.)
+  category?: string;           // категория (пока «accounting»)
+  periodicity: ServicePeriodicity;
+  targetEntityType: TargetEntityType;
+  isArchived?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ServicePackage {
+  id: string;
+  orgId: string;
+  name: string;
+  description?: string;
+  price: number;               // абонентская цена/мес
+  targetEntityType: TargetEntityType;
+  includedItems: string[];     // текстовый перечень включённых позиций
+  isArchived?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}

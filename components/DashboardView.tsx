@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { RulesView } from './RulesView';
+import { ServicesView } from './ServicesView';
 
 type DashboardTab = 'main' | 'finance' | 'references' | 'services';
 
@@ -80,6 +81,8 @@ export const DashboardView: React.FC = () => {
         switch (activeTab) {
             case 'references':
                 return <RulesView isSuperAdmin={true} isAdmin={true} />;
+            case 'services':
+                return <ServicesView />;
             default:
                 return <TabPlaceholder title={tabContent[activeTab]} />;
         }
@@ -111,8 +114,8 @@ export const DashboardView: React.FC = () => {
 
             {/* Контент */}
             <div className="flex-1 p-6 bg-slate-50 overflow-auto">
-                {activeTab === 'references' ? (
-                    // Справочники — без общей рамки
+                {activeTab === 'references' || activeTab === 'services' ? (
+                    // Справочники и Услуги — без общей рамки (свои рамки внутри)
                     <div className="h-full">
                         {renderTabContent()}
                     </div>
