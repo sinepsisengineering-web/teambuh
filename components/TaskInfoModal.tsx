@@ -15,15 +15,22 @@ export interface TaskInfoData {
     status?: string;
     cyclePattern?: string;
     isUrgent?: boolean;
+    isBlocked?: boolean;       // Заблокирована для выполнения
+    blockReason?: string;      // Причина блокировки
+    isCompleted?: boolean;     // Уже выполнена
+    isAutomatic?: boolean;     // Автоматическая задача
+    ruleId?: string;           // ID правила
 }
 
 interface TaskInfoModalProps {
     isOpen: boolean;
     task: TaskInfoData | null;
     onClose: () => void;
+    onComplete?: (taskId: string) => void;
+    onEdit?: (taskId: string) => void;
 }
 
-export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onClose }) => {
+export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onClose, onComplete, onEdit }) => {
     if (!isOpen || !task) return null;
 
     const computedStatus = computeTaskStatus({
@@ -43,6 +50,9 @@ export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onCl
         month: 'long',
         year: 'numeric'
     });
+
+    const isCompleted = task.isCompleted || task.status === 'Выполнена';
+    const isBlocked = task.isBlocked && !isCompleted;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -104,6 +114,14 @@ export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onCl
                         </div>
                     )}
 
+                    {/* Предупреждение о блокировке */}
+                    {isBlocked && task.blockReason && (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                            <span className="text-lg">⚠️</span>
+                            <span className="text-sm text-amber-800">{task.blockReason}</span>
+                        </div>
+                    )}
+
                     {/* Срок */}
                     <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
                         <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -116,7 +134,43 @@ export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onCl
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-3 bg-slate-50 border-t flex justify-end">
+                <div className="px-6 py-3 bg-slate-50 border-t flex justify-between items-center">
+                    {/* Кнопки действий */}
+                    <div className="flex items-center gap-2">
+                        {onComplete && (
+                            isCompleted ? (
+                                <button
+                                    onClick={() => onComplete(task.id)}
+                                    className="px-4 py-2 text-sm font-semibold text-yellow-700 bg-yellow-100 hover:bg-yellow-200 rounded-lg transition-colors"
+                                >
+                                    ↩️ Вернуть в работу
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={isBlocked ? undefined : () => onComplete(task.id)}
+                                    disabled={isBlocked}
+                                    className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${isBlocked
+                                        ? 'text-slate-400 bg-slate-200 cursor-not-allowed'
+                                        : 'text-white bg-green-600 hover:bg-green-700'
+                                        }`}
+                                    title={isBlocked ? (task.blockReason || 'Задача заблокирована') : 'Отметить задачу выполненной'}
+                                >
+                                    ✅ Выполнить задачу
+                                </button>
+                            )
+                        )}
+
+                        {/* Кнопка редактирования — для ручных задач и задач из правил */}
+                        {onEdit && !task.isAutomatic && !isCompleted && (
+                            <button
+                                onClick={() => onEdit(task.id)}
+                                className="px-4 py-2 text-sm font-semibold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 rounded-lg transition-colors"
+                            >
+                                ✏️ Редактировать
+                            </button>
+                        )}
+                    </div>
+
                     <button
                         onClick={onClose}
                         className="px-5 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"

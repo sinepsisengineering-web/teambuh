@@ -20,7 +20,7 @@ const TENANT_ID = 'org_default';
 export interface DbRule {
     id: string;
     source: 'system' | 'custom';
-    storageCategory: 'налоговые' | 'финансовые' | 'организационные';
+    storageCategory: 'налоговые' | 'финансовые' | 'организационные' | 'шаблоны';
     isActive: boolean;
     version: number;
 
@@ -49,6 +49,8 @@ export interface DbRule {
     };
 
     excludeMonths: number[] | null;
+    completionLeadDays?: number;  // За сколько дней до срока можно выполнить (дефолт 3)
+    manualOnly: boolean;           // Только по привязке (не авто-генерировать)
 
     createdAt: string;
     updatedAt: string;
@@ -276,6 +278,7 @@ export const convertToTaskRule = (dbRule: DbRule): TaskRule => {
         shortDescription: dbRule.shortDescription,
         description: dbRule.description || '',
         lawReference: dbRule.lawReference || undefined,
+        completionLeadDays: dbRule.completionLeadDays ?? 3,
     };
 };
 
@@ -284,7 +287,7 @@ export const convertToTaskRule = (dbRule: DbRule): TaskRule => {
  */
 export const getRulesForGeneration = async (tenantId = TENANT_ID): Promise<TaskRule[]> => {
     const dbRules = await getAllRules(tenantId);
-    return dbRules.filter(r => r.isActive).map(convertToTaskRule);
+    return dbRules.filter(r => r.isActive && !r.manualOnly).map(convertToTaskRule);
 };
 
 // ==========================================
@@ -295,6 +298,7 @@ export const CATEGORIES: Record<string, { name: string; icon: string }> = {
     'налоговые': { name: 'Налоговые', icon: '📋' },
     'финансовые': { name: 'Финансовые', icon: '💰' },
     'организационные': { name: 'Организационные', icon: '🗂️' },
+    'шаблоны': { name: 'Шаблоны', icon: '⭐' },
 };
 
 export const TASK_TYPE_OPTIONS = [

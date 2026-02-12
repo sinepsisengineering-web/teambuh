@@ -100,7 +100,8 @@ export const getPriorityColor = (dueDate: Date | string, status?: string): strin
  */
 export const getPriorityBarColor = (task: TaskIndicatorInput): string => {
     // Выполнено = серый
-    if (task.status === 'completed') return 'bg-slate-300';
+    const s = (task.status || '').toLowerCase();
+    if (s === 'completed' || s === 'выполнена') return 'bg-slate-300';
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -121,13 +122,17 @@ export const getPriorityBarColor = (task: TaskIndicatorInput): string => {
 
 /**
  * Получить цвет черты-индикатора под датой в календаре
- * Приоритет определяется на основе computeTaskStatus
+ * Логика:
+ *   🟢 Зелёный — все задачи выполнены
+ *   🔴 Красный — есть просроченные невыполненные задачи
+ *   🔵 Синий — есть задачи, которые можно выполнять (inProgress / urgent)
+ *   ⚪ Серый — задачи ещё не активны (paused / blocked / pending)
  */
 export const getCalendarDayColor = (tasks: CalendarTask[], date: Date): string => {
     if (tasks.length === 0) return '';
 
     // Вычисляем статус для каждой задачи
-    const statusPriorities: TaskStatusType[] = tasks.map(t =>
+    const statuses: TaskStatusType[] = tasks.map(t =>
         computeTaskStatus({
             id: t.id,
             dueDate: t.dueDate,
@@ -140,17 +145,18 @@ export const getCalendarDayColor = (tasks: CalendarTask[], date: Date): string =
         })
     );
 
-    // Находим самый приоритетный статус (наименьший priority)
-    let highestPriority = 999;
-    let highestPriorityStatus: TaskStatusType = 'inProgress';
+    // Все выполнены → зелёный
+    const allCompleted = statuses.every(s => s === 'completed' || s === 'archived');
+    if (allCompleted) return 'bg-green-500';
 
-    for (const status of statusPriorities) {
-        const config = STATUS_CONFIG[status];
-        if (config && config.priority < highestPriority) {
-            highestPriority = config.priority;
-            highestPriorityStatus = status;
-        }
-    }
+    // Есть просроченные (невыполненные) → красный
+    const hasOverdue = statuses.some(s => s === 'overdue');
+    if (hasOverdue) return 'bg-red-500';
 
-    return getCalendarColorByStatus(highestPriorityStatus);
+    // Есть задачи в работе / срочные → синий
+    const hasActionable = statuses.some(s => s === 'inProgress' || s === 'urgent');
+    if (hasActionable) return 'bg-blue-500';
+
+    // Остальное (paused, blocked, pending) → серый
+    return 'bg-slate-300';
 };

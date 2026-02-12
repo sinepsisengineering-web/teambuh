@@ -123,18 +123,20 @@ export enum TaskStatus {
 }
 
 export enum TaskDueDateRule {
-  NextBusinessDay = 'next',
-  PreviousBusinessDay = 'previous',
-  NoTransfer = 'none',
+  NextBusinessDay = 'next_business_day',
+  PreviousBusinessDay = 'previous_business_day',
+  NoTransfer = 'no_transfer',
 }
 
 export enum RepeatFrequency {
   None = 'none',
   Daily = 'daily',
   Weekly = 'weekly',
+  Biweekly = 'biweekly',
   Monthly = 'monthly',
   Quarterly = 'quarterly',
   Yearly = 'yearly',
+  OneTime = 'oneTime',
 }
 
 export enum ReminderSetting {
@@ -174,6 +176,9 @@ export interface Task {
   fullDescription?: string;  // Полное описание из правила
   legalBasis?: string;       // Основание (ссылка на закон)
   ruleId?: string;           // ID правила (для связи со справочником)
+
+  // === ДОПУСК К ВЫПОЛНЕНИЮ ===
+  completionLeadDays?: number;  // За сколько дней до срока можно выполнить (0=в день, 3=за 3 дня, дефолт 3)
 }
 
 
@@ -238,15 +243,17 @@ export interface Employee {
 // ТИПЫ ДЛЯ ПРАВИЛ (перенесено из taskRules.ts)
 // ============================================
 
-export type TaskType = 'Отчет' | 'Уплата' | 'Уведомление' | 'Задача';
-export type RuleCategory = 'налоговые' | 'финансовые' | 'организационные';
+export type TaskType = 'Отчет' | 'Уплата' | 'Уведомление' | 'Задача' | 'прочее';
+export type RuleCategory = 'налоговые' | 'финансовые' | 'организационные' | 'шаблоны';
 export type RuleType = 'global' | 'local' | 'custom';
 
 // Конфигурация расчёта даты
 export interface DateCalculationConfig {
-  type: 'fixed_day' | 'day_of_month' | 'end_of_month' | 'relative';
-  day?: number;           // День месяца (1-31)
-  monthOffset?: number;   // Смещение месяца (0 = текущий, 1 = следующий)
+  type?: 'fixed_day' | 'day_of_month' | 'end_of_month' | 'relative';
+  day?: number;              // День месяца (1-31)
+  month?: number;            // Месяц (0-11) для ежегодных правил
+  monthOffset?: number;      // Смещение месяца (0 = текущий, 1 = следующий)
+  quarterMonthOffset?: number; // Смещение месяца в квартале (0, 1, 2)
   quarter?: 'current' | 'next';
 }
 
@@ -282,6 +289,9 @@ export interface TaskRule {
   dateConfig: DateCalculationConfig;
   dueDateRule: TaskDueDateRule;
   excludeMonths?: number[];
+
+  // Допуск к выполнению
+  completionLeadDays?: number;  // За сколько дней до срока можно выполнить (дефолт 3)
 
   // Мета
   createdAt?: string;

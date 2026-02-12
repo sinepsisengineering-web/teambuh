@@ -15,8 +15,7 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [taskModalDefaultDate, setTaskModalDefaultDate] = useState<Date | null>(null);
-  const [isTaskDetailModalOpen, setIsTaskDetailModalOpen] = useState(false);
-  const [tasksForDetailView, setTasksForDetailView] = useState<Task[]>([]);
+
 
   // Проверяем доступность SQLite при старте
   useEffect(() => {
@@ -184,7 +183,7 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
   // Удаление задачи
   const handleDeleteTask = useCallback(async (taskId: string) => {
     setTasks(tasks.filter(t => t.id !== taskId));
-    setIsTaskDetailModalOpen(false);
+
 
     // Удаляем из БД
     if (isDBAvailable) {
@@ -203,18 +202,7 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
     setIsTaskModalOpen(true);
   }, []);
 
-  const handleOpenTaskDetail = useCallback((tasks: Task[], date: Date) => {
-    setTasksForDetailView(tasks);
-    setIsTaskDetailModalOpen(true);
-  }, []);
 
-  const handleEditTaskFromDetail = useCallback((task: Task) => {
-    setIsTaskDetailModalOpen(false);
-    setTimeout(() => {
-      setTaskToEdit(task);
-      setIsTaskModalOpen(true);
-    }, 200);
-  }, []);
 
   const handleBulkComplete = useCallback(async (taskIds: string[]) => {
     const updatedTasks = tasks.map(t => {
@@ -257,14 +245,23 @@ export const useTasks = (legalEntities: LegalEntity[], legalEntityMap: Map<strin
     }
   }, [tasks, isDBAvailable]);
 
+  // Перезагрузка задач (после ручного создания)
+  const refreshTasks = useCallback(async () => {
+    if (isDBAvailable && legalEntities.length > 0) {
+      console.log('[useTasks] Refreshing tasks...');
+      const syncedTasks = await taskSync.syncAllTasks(legalEntities);
+      setTasks(updateTaskStatuses(syncedTasks));
+    }
+  }, [isDBAvailable, legalEntities]);
+
   return {
     tasks, isTaskModalOpen, setIsTaskModalOpen, taskToEdit, setTaskToEdit, taskModalDefaultDate,
-    isTaskDetailModalOpen, setIsTaskDetailModalOpen, tasksForDetailView, setTasksForDetailView,
     handleSaveTask,
     handleOpenNewTaskForm,
-    handleOpenTaskDetail, handleToggleComplete, handleEditTaskFromDetail, handleDeleteTask, handleBulkComplete,
+    handleToggleComplete, handleDeleteTask, handleBulkComplete,
     handleBulkDelete,
     handleDeleteTasksForLegalEntity,
-    isDBAvailable, // Экспортируем для отладки
+    isDBAvailable,
+    refreshTasks,
   };
 };

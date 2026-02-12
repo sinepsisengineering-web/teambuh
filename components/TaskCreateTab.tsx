@@ -83,19 +83,18 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
     const [internalRules, setInternalRules] = useState<DbRule[]>([]);
     const [rulesLoading, setRulesLoading] = useState(false);
     const [ruleSearch, setRuleSearch] = useState('');
+    const [pickerFilter, setPickerFilter] = useState<'all' | 'шаблоны' | 'финансовые' | 'организационные'>('all');
     const [templateSaved, setTemplateSaved] = useState(false);
+    const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
 
-    // Загрузка внутренних правил для пикера
+    // Загрузка правил и шаблонов для пикера
     const loadInternalRules = async () => {
         setRulesLoading(true);
         try {
             const allRules = await getAllRules();
-            // Внутренние + пользовательские шаблоны
-            const internal = allRules.filter(r =>
-                r.isActive &&
-                (r.storageCategory === 'финансовые' || r.storageCategory === 'организационные' || r.source === 'custom')
-            );
-            setInternalRules(internal);
+            // Все активные правила + шаблоны
+            const filtered = allRules.filter(r => r.isActive);
+            setInternalRules(filtered);
         } catch (e) {
             console.error('[TaskCreateTab] Error loading rules:', e);
             setInternalRules([]);
@@ -104,15 +103,41 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
         }
     };
 
-    // Фильтрация правил по поиску
+    // Предзагрузка правил при монтировании (для автокомплита)
+    useEffect(() => {
+        loadInternalRules();
+    }, []);
+
+    // Фильтрация правил по поиску и категории (пикер)
     const filteredRules = useMemo(() => {
-        if (!ruleSearch.trim()) return internalRules;
-        const q = ruleSearch.toLowerCase();
+        // Исключаем налоговые/системные — только шаблоны, финансовые, организационные
+        let rules = internalRules.filter(r =>
+            r.source === 'custom' && r.storageCategory !== 'налоговые'
+        );
+        // Фильтр по категории
+        if (pickerFilter !== 'all') {
+            rules = rules.filter(r => r.storageCategory === pickerFilter);
+        }
+        // Поиск
+        if (ruleSearch.trim()) {
+            const q = ruleSearch.toLowerCase();
+            rules = rules.filter(r =>
+                r.shortTitle.toLowerCase().includes(q) ||
+                r.shortDescription.toLowerCase().includes(q)
+            );
+        }
+        return rules;
+    }, [internalRules, ruleSearch, pickerFilter]);
+
+    // Автокомплит подсказки по названию (мин 2 символа)
+    const titleSuggestions = useMemo(() => {
+        if (!title.trim() || title.trim().length < 2 || internalRules.length === 0) return [];
+        const q = title.toLowerCase();
         return internalRules.filter(r =>
             r.shortTitle.toLowerCase().includes(q) ||
             r.shortDescription.toLowerCase().includes(q)
-        );
-    }, [internalRules, ruleSearch]);
+        ).slice(0, 5); // Максимум 5 подсказок
+    }, [title, internalRules]);
 
     // --- Предзаполнение формы при редактировании ---
     useEffect(() => {
@@ -224,7 +249,7 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
             const templateData: CreateCustomRule & { id: string; source: string } = {
                 id: generateId('task'),
                 source: 'custom',
-                storageCategory: 'организационные',
+                storageCategory: 'шаблоны',
                 isActive: true,
                 taskType: 'custom',
                 shortTitle: title.trim(),
@@ -501,13 +526,44 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
                         <label className="block text-sm font-medium text-slate-700 mb-1">
                             Название <span className="text-red-500">*</span>
                         </label>
-                        <input
-                            type="text"
-                            value={title}
-                            onChange={e => setTitle(e.target.value)}
-                            placeholder="Например: Подготовить квартальный отчёт"
-                            className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-                        />
+                        <div className="relative">
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={e => {
+                                    setTitle(e.target.value);
+                                    setShowTitleSuggestions(true);
+                                }}
+                                onFocus={() => setShowTitleSuggestions(true)}
+                                onBlur={() => setTimeout(() => setShowTitleSuggestions(false), 200)}
+                                placeholder="Например: Подготовить квартальный отчёт"
+                                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                                autoComplete="off"
+                            />
+                            {/* Автокомплит подсказки */}
+                            {showTitleSuggestions && titleSuggestions.length > 0 && (
+                                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                    {titleSuggestions.map(rule => (
+                                        <button
+                                            key={rule.id}
+                                            type="button"
+                                            className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 transition-colors border-b border-slate-100 last:border-0"
+                                            onMouseDown={(e) => {
+                                                e.preventDefault();
+                                                applyRule(rule);
+                                                setShowTitleSuggestions(false);
+                                            }}
+                                        >
+                                            <div className="text-sm font-medium text-slate-800">{rule.shortTitle}</div>
+                                            <div className="text-xs text-slate-500 truncate">{rule.shortDescription}</div>
+                                            {rule.source === 'custom' && (
+                                                <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded mt-0.5 inline-block">шаблон</span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Описание */}
@@ -972,22 +1028,42 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
                         {/* Шапка */}
                         <div className="sticky top-0 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
                             <span className="text-lg font-semibold text-slate-800">Выбрать правило</span>
-                            <button onClick={() => { setShowRulePickerModal(false); setRuleSearch(''); }} className="text-slate-400 hover:text-slate-600">
+                            <button onClick={() => { setShowRulePickerModal(false); setRuleSearch(''); setPickerFilter('all'); }} className="text-slate-400 hover:text-slate-600">
                                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
                         </div>
 
-                        {/* Поиск */}
-                        <div className="px-5 pt-3">
+                        {/* Поиск + фильтр */}
+                        <div className="px-5 pt-3 space-y-2">
                             <input
                                 type="text"
                                 value={ruleSearch}
                                 onChange={e => setRuleSearch(e.target.value)}
-                                placeholder="Поиск правила..."
+                                placeholder="Поиск..."
                                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                             />
+                            {/* Мини-фильтр по типу */}
+                            <div className="flex gap-1">
+                                {[
+                                    { id: 'all' as const, label: 'Все' },
+                                    { id: 'шаблоны' as const, label: '⭐ Шаблоны' },
+                                    { id: 'финансовые' as const, label: '💰 Финансовые' },
+                                    { id: 'организационные' as const, label: '📋 Организационные' },
+                                ].map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setPickerFilter(tab.id)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${pickerFilter === tab.id
+                                                ? 'bg-primary text-white'
+                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Список */}
@@ -997,25 +1073,42 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
                             ) : filteredRules.length === 0 ? (
                                 <div className="text-center text-slate-400 py-8">
                                     <div className="text-3xl mb-2">📋</div>
-                                    <p className="text-sm">Внутренних правил пока нет</p>
-                                    <p className="text-xs mt-1">Создайте правило в справочнике или нажмите «Добавить правило»</p>
+                                    <p className="text-sm">Ничего не найдено</p>
+                                    <p className="text-xs mt-1">Создайте шаблон или правило в справочнике</p>
                                 </div>
                             ) : (
-                                filteredRules.map(rule => (
-                                    <button
-                                        key={rule.id}
-                                        onClick={() => applyRule(rule)}
-                                        className="w-full text-left p-3 bg-white border border-slate-200 rounded-lg hover:border-primary hover:shadow-md transition-all"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-                                                {rule.storageCategory === 'финансовые' ? '💰' : '📋'}
-                                            </span>
-                                            <span className="font-medium text-slate-900 text-sm">{rule.shortTitle}</span>
-                                        </div>
-                                        <div className="text-xs text-slate-500 mt-1 ml-8 line-clamp-1">{rule.shortDescription}</div>
-                                    </button>
-                                ))
+                                filteredRules.map(rule => {
+                                    const isTemplateItem = rule.storageCategory === 'шаблоны';
+                                    const categoryIcon = isTemplateItem ? '⭐' : rule.storageCategory === 'финансовые' ? '💰' : '📋';
+                                    const categoryLabel = isTemplateItem ? 'шаблон' : rule.storageCategory === 'финансовые' ? 'финансовое' : 'организационное';
+                                    return (
+                                        <button
+                                            key={rule.id}
+                                            onClick={() => applyRule(rule)}
+                                            className={`w-full text-left p-3 border rounded-lg hover:shadow-md transition-all ${isTemplateItem
+                                                    ? 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
+                                                    : 'bg-white border-slate-200 hover:border-primary'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-xs px-2 py-0.5 rounded-full ${isTemplateItem
+                                                        ? 'bg-amber-100 text-amber-600'
+                                                        : 'bg-slate-100 text-slate-500'
+                                                    }`}>
+                                                    {categoryIcon}
+                                                </span>
+                                                <span className="font-medium text-slate-900 text-sm">{rule.shortTitle}</span>
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ml-auto ${isTemplateItem
+                                                        ? 'text-amber-600 bg-amber-100'
+                                                        : 'text-slate-500 bg-slate-100'
+                                                    }`}>
+                                                    {categoryLabel}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-slate-500 mt-1 ml-8 line-clamp-1">{rule.shortDescription}</div>
+                                        </button>
+                                    );
+                                })
                             )}
                         </div>
                     </div>

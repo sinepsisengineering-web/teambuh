@@ -1,13 +1,15 @@
 // components/TasksView.tsx
 // Новый модуль управления задачами с каскадной фильтрацией
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Task, TaskStatus, LegalEntity, Employee } from '../types';
 import { MiniCalendar } from './MiniCalendar';
 import { TaskCompletionModal } from './TaskCompletionModal';
 import { ClientListModal } from './ClientListModal';
 import { useTaskModal } from '../contexts/TaskModalContext';
 import { getPriorityBarColor } from '../services/taskIndicators';
+import { canCompleteTask, isTaskLocked, getBlockingPredecessor } from '../services/taskGenerator';
+import { TaskCreateTab } from './TaskCreateTab';
 
 // ============================================
 // ТИПЫ
@@ -30,6 +32,7 @@ interface TasksViewProps {
     onReassignTask?: (taskId: string, newAssigneeId: string | null) => void;
     onNavigateToClient?: (clientId: string) => void; // Переход на страницу клиента
     initialClientId?: string | null; // Для предустановки фильтра клиента
+    onTaskCreated?: () => void; // Колбэк после создания задачи
 }
 
 // Состояние фильтров
@@ -115,6 +118,8 @@ interface TaskRowProps {
     onClientClick?: () => void;
     onEmployeeClick?: () => void;
     onTaskClick?: () => void;
+    isBlocked?: boolean;
+    blockReason?: string;
 }
 
 const TaskRow: React.FC<TaskRowProps> = ({
@@ -129,7 +134,9 @@ const TaskRow: React.FC<TaskRowProps> = ({
     onMove,
     onClientClick,
     onEmployeeClick,
-    onTaskClick
+    onTaskClick,
+    isBlocked = false,
+    blockReason
 }) => {
     // Используем общую функцию для цвета полосы приоритета
     const priorityClass = getPriorityBarColor({
@@ -157,7 +164,7 @@ const TaskRow: React.FC<TaskRowProps> = ({
             <div className="w-14 text-center flex-shrink-0 flex flex-col items-center justify-center">
                 {/* Строка 1: Авто/Ручн с иконкой */}
                 <div className="text-base">
-                    {task.isAutomatic ? '🤖' : '✍️'}
+                    {task.isAutomatic ? '🤖' : task.ruleId ? '📋' : '✍️'}
                 </div>
                 {/* Строка 2: Цикл/Разовая */}
                 <div className="text-sm">
@@ -240,9 +247,13 @@ const TaskRow: React.FC<TaskRowProps> = ({
                     </button>
                 ) : (
                     <button
-                        onClick={onComplete}
-                        className="w-6 h-6 flex items-center justify-center text-green-500 hover:bg-green-100 rounded transition-colors"
-                        title="Выполнить"
+                        onClick={isBlocked ? undefined : onComplete}
+                        disabled={isBlocked}
+                        className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${isBlocked
+                            ? 'text-slate-300 cursor-not-allowed'
+                            : 'text-green-500 hover:bg-green-100'
+                            }`}
+                        title={isBlocked ? (blockReason || 'Задача заблокирована') : 'Выполнить'}
                     >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -413,9 +424,10 @@ export const TasksView: React.FC<TasksViewProps> = ({
     onDeleteTask,
     onReassignTask,
     onNavigateToClient,
-    initialClientId
+    initialClientId,
+    onTaskCreated,
 }) => {
-    const { openTaskModal } = useTaskModal();
+    const { openTaskModal, setOnEdit } = useTaskModal();
 
     // Состояние фильтров
     const [filters, setFilters] = useState<FilterState>({
@@ -479,8 +491,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
         const groups = new Map<string, GroupedTask>();
 
         tasksFiltered.forEach(task => {
-            const client = clientMap.get(task.legalEntityId);
-            if (!client) return;
+            const client = clientMap.get(task.legalEntityId)
+                || { id: task.legalEntityId, name: task.legalEntityId === '__unassigned__' ? 'Без привязки' : (task.description || 'Ручная задача') };
 
             // Ключ группы: title + dueDate + isAutomatic + status
             const dueDateStr = new Date(task.dueDate).toDateString();
@@ -613,7 +625,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
         return Array.from(counts.entries())
             .map(([id, count]) => {
                 const client = clientMap.get(id);
-                return client ? { id, name: client.name, count } : null;
+                const name = client ? client.name : (id === '__unassigned__' ? 'Без привязки' : id);
+                return { id, name, count };
             })
             .filter(Boolean) as { id: string; name: string; count: number }[];
     }, [tasksInMonth, clientMap, filters.selectedEmployeeId]);
@@ -669,170 +682,262 @@ export const TasksView: React.FC<TasksViewProps> = ({
         tasksInMonth.filter(t => !getEffectiveAssignee(t, clientMap)).length
         , [tasksInMonth, clientMap]);
 
+    // Вкладки
+    const [activeTab, setActiveTab] = useState<'list' | 'create'>('list');
+
+    // Редактируемая задача
+    interface EditingTaskData {
+        id: string;
+        title: string;
+        description?: string;
+        dueDate: string;
+        repeat: string;
+        completionLeadDays?: number;
+        legalEntityId: string;
+        ruleId?: string;
+    }
+    const [editingTask, setEditingTask] = useState<EditingTaskData | null>(null);
+
+    // Обработчик редактирования задачи
+    React.useEffect(() => {
+        setOnEdit((taskId: string) => {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            const dueDate = new Date(task.dueDate);
+            const dateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`;
+
+            setEditingTask({
+                id: task.id,
+                title: task.title,
+                description: task.description,
+                dueDate: dateStr,
+                repeat: task.repeat || 'none',
+                completionLeadDays: task.completionLeadDays,
+                legalEntityId: task.legalEntityId,
+                ruleId: task.ruleId,
+            });
+            setActiveTab('create');
+        });
+        return () => setOnEdit(null);
+    }, [tasks, setOnEdit]);
+
     return (
-        <>
-            <div className="h-full flex gap-4">
-                {/* Левая колонка — Список задач (70%) */}
-                <div className="w-[70%] h-full flex flex-col bg-white rounded-lg border border-slate-200 overflow-hidden">
-                    {/* Заголовок */}
-                    <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h2 className="text-sm font-semibold text-slate-800">
-                                    Задачи на {filters.selectedMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}
-                                    {filters.selectedDay && ` • ${filters.selectedDay.getDate()} число`}
-                                </h2>
-                                <p className="text-xs text-slate-500">
-                                    Всего задач: {tasksFiltered.length}
-                                    {filters.selectedEmployeeId && ` • ${employeeMap.get(filters.selectedEmployeeId)?.lastName || ''}`}
-                                    {filters.selectedClientId && ` • ${clientMap.get(filters.selectedClientId)?.name || ''}`}
-                                    {filters.showUnassigned && ' • Без назначения'}
-                                </p>
+        <div className="h-full flex flex-col -m-8">
+            {/* Панель вкладок */}
+            <div className="bg-[linear-gradient(135deg,#1E1E3F_0%,#312e81_50%,#1E1E3F_100%)] px-6 py-3">
+                <nav className="flex gap-1">
+                    {[
+                        { id: 'list' as const, label: '📋 Список задач' },
+                        { id: 'create' as const, label: '➕ Добавить задачу' },
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${activeTab === tab.id
+                                ? 'bg-white/20 text-white'
+                                : 'text-white/50 hover:text-white hover:bg-white/10'
+                                }`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </nav>
+            </div>
+
+            {/* Контент вкладки */}
+            <div className="flex-1 min-h-0 p-4 bg-slate-50">
+                {activeTab === 'create' ? (
+                    <TaskCreateTab
+                        legalEntities={legalEntities}
+                        employees={employees}
+                        onTaskCreated={() => {
+                            setEditingTask(null);
+                            onTaskCreated?.();
+                        }}
+                        editingTask={editingTask}
+                    />
+                ) : (
+                    <>
+                        <div className="h-full flex gap-4">
+                            {/* Левая колонка — Список задач (70%) */}
+                            <div className="w-[70%] h-full flex flex-col bg-white rounded-lg border border-slate-200 overflow-hidden">
+                                {/* Заголовок */}
+                                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h2 className="text-sm font-semibold text-slate-800">
+                                                Задачи на {filters.selectedMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}
+                                                {filters.selectedDay && ` • ${filters.selectedDay.getDate()} число`}
+                                            </h2>
+                                            <p className="text-xs text-slate-500">
+                                                Всего задач: {tasksFiltered.length}
+                                                {filters.selectedEmployeeId && ` • ${employeeMap.get(filters.selectedEmployeeId)?.lastName || ''}`}
+                                                {filters.selectedClientId && ` • ${clientMap.get(filters.selectedClientId)?.name || ''}`}
+                                                {filters.showUnassigned && ' • Без назначения'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Заголовок таблицы */}
+                                <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 border-b border-slate-200 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+                                    <div style={{ width: '18px' }}></div>
+                                    <div className="w-8 text-center">Статус</div>
+                                    <div className="w-14 text-center">Тип</div>
+                                    <div className="flex-1">Задача</div>
+                                    <div className="w-10 text-center">Клиент</div>
+                                    <div className="w-10 text-center">Исполн.</div>
+                                    <div className="w-8"></div>
+                                    <div className="w-14 text-center">Срок</div>
+                                    <div className="w-20 text-center">Действия</div>
+                                </div>
+
+                                {/* Список задач */}
+                                <div className="flex-1 overflow-y-auto">
+                                    {groupedTasks.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                                            <div className="text-4xl mb-3">📋</div>
+                                            <p className="text-sm">Задач нет</p>
+                                            <p className="text-xs">Попробуйте изменить фильтры</p>
+                                        </div>
+                                    ) : (
+                                        groupedTasks.map(group => {
+                                            const effectiveAssignee = getEffectiveAssignee(group.baseTask, clientMap);
+                                            const assignee = effectiveAssignee && effectiveAssignee !== 'shared'
+                                                ? employeeMap.get(effectiveAssignee)
+                                                : null;
+
+                                            // Передаём эффективную привязку в task для TaskRow
+                                            const taskWithAssignee = { ...group.baseTask, assignedTo: effectiveAssignee };
+
+                                            // Вычисляем блокировку
+                                            const lockedByPeriod = isTaskLocked(group.baseTask);
+                                            const canComplete = canCompleteTask(group.baseTask, tasks);
+                                            const taskIsBlocked = (lockedByPeriod || !canComplete) && group.baseTask.status !== TaskStatus.Completed;
+                                            const blockingPred = getBlockingPredecessor(group.baseTask, tasks);
+                                            const blockReasonText = lockedByPeriod
+                                                ? `Период ещё не наступил (${group.baseTask.completionLeadDays ?? 3} дн. до срока)`
+                                                : blockingPred
+                                                    ? `Сначала: «${blockingPred.title}»`
+                                                    : '';
+
+                                            return (
+                                                <TaskRow
+                                                    key={group.key}
+                                                    task={taskWithAssignee}
+                                                    clientName={group.clients.map(c => c.name).join(', ')}
+                                                    assigneeName={assignee ? `${assignee.lastName} ${assignee.firstName}` : undefined}
+                                                    clientCount={group.clients.length}
+                                                    employeeCount={effectiveAssignee ? 1 : 0}
+                                                    onComplete={() => handleCompleteClick(group)}
+                                                    isBlocked={taskIsBlocked}
+                                                    blockReason={blockReasonText}
+                                                    onDelete={() => {
+                                                        // Удаляем все задачи в группе
+                                                        group.clients.forEach(c => onDeleteTask?.(c.taskId));
+                                                    }}
+                                                    onReassign={() => console.log('Reassign group:', group.key)}
+                                                    onMove={() => console.log('Move group:', group.key)}
+                                                    onClientClick={() => handleClientCountClick(group)}
+                                                    onEmployeeClick={() => console.log('Employee:', effectiveAssignee)}
+                                                    onTaskClick={() => openTaskModal({
+                                                        id: group.baseTask.id,
+                                                        title: group.baseTask.title,
+                                                        description: group.baseTask.description,
+                                                        fullDescription: group.baseTask.fullDescription,
+                                                        legalBasis: group.baseTask.legalBasis,
+                                                        clientName: group.clients.map(c => c.name).join(', '),
+                                                        dueDate: group.baseTask.dueDate,
+                                                        status: group.baseTask.status,
+                                                        isBlocked: taskIsBlocked,
+                                                        blockReason: blockReasonText,
+                                                        isCompleted: group.baseTask.status === TaskStatus.Completed,
+                                                        isAutomatic: group.baseTask.isAutomatic,
+                                                        ruleId: group.baseTask.ruleId,
+                                                    })}
+                                                />
+                                            );
+                                        })
+                                    )}
+                                </div>
+
+                                {/* Легенда (фиксированная внизу) */}
+                                <TaskLegend />
                             </div>
-                            <button className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors flex items-center gap-2">
-                                <span className="text-lg">+</span>
-                                Добавить задачу
-                            </button>
-                        </div>
-                    </div>
 
-                    {/* Заголовок таблицы */}
-                    <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 border-b border-slate-200 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                        <div style={{ width: '18px' }}></div>
-                        <div className="w-8 text-center">Статус</div>
-                        <div className="w-14 text-center">Тип</div>
-                        <div className="flex-1">Задача</div>
-                        <div className="w-10 text-center">Клиент</div>
-                        <div className="w-10 text-center">Исполн.</div>
-                        <div className="w-8"></div>
-                        <div className="w-14 text-center">Срок</div>
-                        <div className="w-20 text-center">Действия</div>
-                    </div>
+                            {/* Правая колонка — Фильтры */}
+                            <div className="w-72 flex-shrink-0 flex flex-col gap-3">
+                                {/* MiniCalendar */}
+                                <MiniCalendar
+                                    tasks={calendarTasks}
+                                    selectedDate={filters.selectedMonth}
+                                    onDateChange={handleMonthChange}
+                                    onDayClick={handleDayClick}
+                                    highlightedDay={filters.selectedDay?.getDate()}
+                                    showFullMonthButton={!!filters.selectedDay}
+                                    onShowFullMonth={handleMonthNameClick}
+                                />
 
-                    {/* Список задач */}
-                    <div className="flex-1 overflow-y-auto">
-                        {groupedTasks.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                                <div className="text-4xl mb-3">📋</div>
-                                <p className="text-sm">Задач нет</p>
-                                <p className="text-xs">Попробуйте изменить фильтры</p>
-                            </div>
-                        ) : (
-                            groupedTasks.map(group => {
-                                const effectiveAssignee = getEffectiveAssignee(group.baseTask, clientMap);
-                                const assignee = effectiveAssignee && effectiveAssignee !== 'shared'
-                                    ? employeeMap.get(effectiveAssignee)
-                                    : null;
-
-                                // Передаём эффективную привязку в task для TaskRow
-                                const taskWithAssignee = { ...group.baseTask, assignedTo: effectiveAssignee };
-
-                                return (
-                                    <TaskRow
-                                        key={group.key}
-                                        task={taskWithAssignee}
-                                        clientName={group.clients.map(c => c.name).join(', ')}
-                                        assigneeName={assignee ? `${assignee.lastName} ${assignee.firstName}` : undefined}
-                                        clientCount={group.clients.length}
-                                        employeeCount={effectiveAssignee ? 1 : 0}
-                                        onComplete={() => handleCompleteClick(group)}
-                                        onDelete={() => {
-                                            // Удаляем все задачи в группе
-                                            group.clients.forEach(c => onDeleteTask?.(c.taskId));
-                                        }}
-                                        onReassign={() => console.log('Reassign group:', group.key)}
-                                        onMove={() => console.log('Move group:', group.key)}
-                                        onClientClick={() => handleClientCountClick(group)}
-                                        onEmployeeClick={() => console.log('Employee:', effectiveAssignee)}
-                                        onTaskClick={() => openTaskModal({
-                                            id: group.baseTask.id,
-                                            title: group.baseTask.title,
-                                            description: group.baseTask.description,
-                                            fullDescription: group.baseTask.fullDescription,
-                                            legalBasis: group.baseTask.legalBasis,
-                                            clientName: group.clients.map(c => c.name).join(', '),
-                                            dueDate: group.baseTask.dueDate,
-                                            status: group.baseTask.status,
-                                        })}
+                                {/* Клиенты */}
+                                <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 min-h-0 overflow-hidden">
+                                    <FilterList
+                                        title="👥 Клиенты"
+                                        items={clientsWithTasks}
+                                        selectedId={filters.selectedClientId}
+                                        onSelect={handleClientSelect}
                                     />
-                                );
-                            })
-                        )}
-                    </div>
+                                </div>
 
-                    {/* Легенда (фиксированная внизу) */}
-                    <TaskLegend />
-                </div>
+                                {/* Персонал */}
+                                <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 min-h-0 overflow-hidden">
+                                    <FilterList
+                                        title="👤 Персонал"
+                                        items={employeesWithTasks}
+                                        selectedId={filters.selectedEmployeeId}
+                                        onSelect={handleEmployeeSelect}
+                                        showUnassignedButton={true}
+                                        isUnassignedActive={filters.showUnassigned}
+                                        onUnassignedClick={handleUnassignedClick}
+                                    />
+                                    {unassignedCount > 0 && !filters.showUnassigned && (
+                                        <p className="text-xs text-orange-500 mt-2">
+                                            ⚠️ Нераспределённых: {unassignedCount}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div >
 
-                {/* Правая колонка — Фильтры */}
-                <div className="w-72 flex-shrink-0 flex flex-col gap-3">
-                    {/* MiniCalendar */}
-                    <MiniCalendar
-                        tasks={calendarTasks}
-                        selectedDate={filters.selectedMonth}
-                        onDateChange={handleMonthChange}
-                        onDayClick={handleDayClick}
-                        highlightedDay={filters.selectedDay?.getDate()}
-                        showFullMonthButton={!!filters.selectedDay}
-                        onShowFullMonth={handleMonthNameClick}
-                    />
+                        {/* Модальное окно выполнения задач */}
+                        {
+                            completionModal && (
+                                <TaskCompletionModal
+                                    isOpen={completionModal.isOpen}
+                                    onClose={() => setCompletionModal(null)}
+                                    onConfirm={handleCompletionConfirm}
+                                    clients={completionModal.clients}
+                                    taskTitle={completionModal.taskTitle}
+                                />
+                            )
+                        }
 
-                    {/* Клиенты */}
-                    <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 min-h-0 overflow-hidden">
-                        <FilterList
-                            title="👥 Клиенты"
-                            items={clientsWithTasks}
-                            selectedId={filters.selectedClientId}
-                            onSelect={handleClientSelect}
-                        />
-                    </div>
-
-                    {/* Персонал */}
-                    <div className="bg-white rounded-lg border border-slate-200 p-3 flex-1 min-h-0 overflow-hidden">
-                        <FilterList
-                            title="👤 Персонал"
-                            items={employeesWithTasks}
-                            selectedId={filters.selectedEmployeeId}
-                            onSelect={handleEmployeeSelect}
-                            showUnassignedButton={true}
-                            isUnassignedActive={filters.showUnassigned}
-                            onUnassignedClick={handleUnassignedClick}
-                        />
-                        {unassignedCount > 0 && !filters.showUnassigned && (
-                            <p className="text-xs text-orange-500 mt-2">
-                                ⚠️ Нераспределённых: {unassignedCount}
-                            </p>
-                        )}
-                    </div>
-                </div>
-            </div >
-
-            {/* Модальное окно выполнения задач */}
-            {
-                completionModal && (
-                    <TaskCompletionModal
-                        isOpen={completionModal.isOpen}
-                        onClose={() => setCompletionModal(null)}
-                        onConfirm={handleCompletionConfirm}
-                        clients={completionModal.clients}
-                        taskTitle={completionModal.taskTitle}
-                    />
-                )
-            }
-
-            {/* Модальное окно списка клиентов */}
-            {
-                clientListModal && (
-                    <ClientListModal
-                        isOpen={clientListModal.isOpen}
-                        onClose={() => setClientListModal(null)}
-                        onClientClick={handleClientNavigate}
-                        clients={clientListModal.clients}
-                        taskTitle={clientListModal.taskTitle}
-                    />
-                )
-            }
-        </>
+                        {/* Модальное окно списка клиентов */}
+                        {
+                            clientListModal && (
+                                <ClientListModal
+                                    isOpen={clientListModal.isOpen}
+                                    onClose={() => setClientListModal(null)}
+                                    onClientClick={handleClientNavigate}
+                                    clients={clientListModal.clients}
+                                    taskTitle={clientListModal.taskTitle}
+                                />
+                            )
+                        }
+                    </>
+                )}
+            </div>
+        </div>
     );
 };
 

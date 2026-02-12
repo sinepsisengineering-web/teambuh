@@ -561,7 +561,7 @@ const ClientDetailsTab: React.FC<{
     const [selectedClientId, setSelectedClientId] = useState(clientId || (clients[0]?.id || ''));
     const [newComment, setNewComment] = useState('');
     const client = clients.find(c => c.id === selectedClientId) || clients[0];
-    const { openTaskModal } = useTaskModal();
+    const { openTaskModal, subscribeAfterComplete } = useTaskModal();
 
     // Модальное окно удаления
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -585,6 +585,19 @@ const ClientDetailsTab: React.FC<{
             });
         }
     }, [selectedClientId]);
+
+    // Мгновенное обновление после выполнения задачи через модалку
+    useEffect(() => {
+        const unsubscribe = subscribeAfterComplete((taskId: string) => {
+            // Обновляем локально: переключаем статус
+            setClientTasks(prev => prev.map(t =>
+                t.id === taskId
+                    ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' }
+                    : t
+            ));
+        });
+        return unsubscribe;
+    }, [subscribeAfterComplete]);
 
     // Преобразуем задачи для MiniCalendar
     const calendarTasks = clientTasks.map(t => ({

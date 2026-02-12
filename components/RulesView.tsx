@@ -37,7 +37,7 @@ interface RulesViewProps {
 }
 
 // Категории-папки
-type FolderCategory = 'system-tax' | 'custom-finance' | 'custom-org';
+type FolderCategory = 'system-tax' | 'custom-finance' | 'custom-org' | 'templates';
 
 interface FolderConfig {
     id: FolderCategory;
@@ -51,6 +51,7 @@ const FOLDERS: FolderConfig[] = [
     { id: 'system-tax', label: 'Общие налоговые', icon: '📊', ruleType: 'system', category: 'налоговые' },
     { id: 'custom-finance', label: 'Внутренние финансовые', icon: '💰', ruleType: 'custom', category: 'финансовые' },
     { id: 'custom-org', label: 'Внутренние организационные', icon: '📋', ruleType: 'custom', category: 'организационные' },
+    { id: 'templates', label: 'Шаблоны', icon: '⭐', ruleType: 'custom', category: 'шаблоны' },
 ];
 
 // Объединённое правило для отображения

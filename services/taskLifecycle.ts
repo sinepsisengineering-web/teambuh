@@ -151,8 +151,10 @@ export function getCycleType(cyclePattern?: string): TaskCycleType {
  */
 export function computeTaskStatus(task: TaskForStatusCheck): TaskStatusType {
     // Если уже выполнена или архивирована — оставляем
-    if (task.status === 'completed') return 'completed';
-    if (task.status === 'archived') return 'archived';
+    // Поддержка и русских (из TaskStatus enum) и английских значений
+    const s = (task.status || '').toLowerCase();
+    if (s === 'completed' || s === 'выполнена') return 'completed';
+    if (s === 'archived' || s === 'архив') return 'archived';
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);

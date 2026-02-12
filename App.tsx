@@ -6,7 +6,6 @@ import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
 import { LegalEntityEditForm } from './components/LegalEntityEditForm';
 import { TaskForm } from './components/TaskForm';
-import { TaskDetailModal } from './components/TaskDetailModal';
 import { TasksView } from './components/TasksView';
 import { ArchiveView } from './components/ArchiveView';
 import { SettingsView } from './components/SettingsView';
@@ -21,6 +20,7 @@ import { DUMMY_CLIENTS, DUMMY_EMPLOYEES } from './dummy-data';
 import { useTasks } from './hooks/useTasks';
 import { useConfirmation } from './contexts/ConfirmationProvider';
 import { useAuth } from './contexts/AuthContext';
+import { useTaskModal } from './contexts/TaskModalContext';
 import { initializeHolidayService } from './services/holidayService';
 import { storage } from './services/storageService';
 
@@ -131,22 +131,21 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
 
     const legalEntityMap = useMemo(() => new Map(legalEntities.map(le => [le.id, le])), [legalEntities]);
 
-    // <<< УДАЛЕНА ЛИШНЯЯ ФУНКЦИЯ addTasksForNewLegalEntity ИЗ ДЕСТРУКТУРИЗАЦИИ >>>
     const {
         tasks, isTaskModalOpen, setIsTaskModalOpen, taskToEdit, setTaskToEdit, taskModalDefaultDate,
-        isTaskDetailModalOpen, setIsTaskDetailModalOpen, tasksForDetailView, setTasksForDetailView,
         handleSaveTask, handleOpenNewTaskForm,
-        handleOpenTaskDetail, handleToggleComplete, handleEditTaskFromDetail, handleDeleteTask,
+        handleToggleComplete, handleDeleteTask,
         handleBulkComplete, handleBulkDelete, handleDeleteTasksForLegalEntity,
+        refreshTasks,
     } = useTasks(activeLegalEntities, legalEntityMap);
 
+    // Подключаем обработчик выполнения задачи к модальному контексту
+    const { setOnComplete } = useTaskModal();
     useEffect(() => {
-        if (!isTaskDetailModalOpen || tasksForDetailView.length === 0) return;
-        const currentDetailTaskIds = new Set(tasksForDetailView.map(t => t.id));
-        const updatedTasksForDetail = tasks.filter(t => currentDetailTaskIds.has(t.id));
-        if (updatedTasksForDetail.length === 0) setIsTaskDetailModalOpen(false);
-        else if (JSON.stringify(tasksForDetailView) !== JSON.stringify(updatedTasksForDetail)) setTasksForDetailView(updatedTasksForDetail);
-    }, [tasks, isTaskDetailModalOpen, tasksForDetailView, setTasksForDetailView, setIsTaskDetailModalOpen]);
+        setOnComplete(handleToggleComplete);
+    }, [handleToggleComplete, setOnComplete]);
+
+
 
     useEffect(() => { localStorage.setItem('legalEntities', JSON.stringify(legalEntities)); }, [legalEntities]);
 
@@ -315,11 +314,11 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                     onToggleComplete={(taskId) => handleToggleComplete(taskId)}
                     onDeleteTask={(taskId) => handleDeleteTask(taskId)}
                     onNavigateToClient={(clientId) => {
-                        // Переход на страницу Клиенты → Детализация
                         setNavigateToClientId(clientId);
                         setActiveView('clients');
                     }}
                     initialClientId={navigateToTasksWithClientId}
+                    onTaskCreated={refreshTasks}
                 />;
             case 'clients':
                 return <ClientsView
@@ -365,7 +364,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
             <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title={taskToEdit && taskToEdit.id ? 'Редактировать задачу' : 'Новая задача'}>
                 <TaskForm legalEntities={activeLegalEntities} onSave={handleSaveTask} onCancel={() => { setIsTaskModalOpen(false); setTaskToEdit(null); }} taskToEdit={taskToEdit} defaultDate={taskModalDefaultDate} />
             </Modal>
-            <TaskDetailModal isOpen={isTaskDetailModalOpen} onClose={() => setIsTaskDetailModalOpen(false)} tasks={tasksForDetailView} allTasks={tasks} legalEntities={activeLegalEntities} onToggleComplete={handleToggleComplete} onEdit={handleEditTaskFromDetail} onDelete={handleDeleteTask} onSelectLegalEntity={(entity: LegalEntity) => { const le = legalEntities.find(le => le.id === entity.id); if (le) { setIsTaskDetailModalOpen(false); setSelectedLegalEntity(le); setActiveView('clients'); } }} />
+
         </div>
     );
 };

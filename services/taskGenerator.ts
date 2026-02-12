@@ -190,6 +190,7 @@ export const generateTasksForLegalEntity = (legalEntity: LegalEntity, rules: Tas
           reminder: ReminderSetting.OneWeek,
           seriesId: `series-auto-${legalEntity.id}-${rule.id}`,
           isPeriodLocked: true,
+          completionLeadDays: rule.completionLeadDays ?? 3,
         };
         allTasks.push(task);
       }
@@ -403,85 +404,21 @@ export const getTaskStatus = (dueDate: Date): TaskStatus => {
   return TaskStatus.Upcoming;
 };
 
-const getPeriodStartDateForTask = (task: Task): Date | null => {
-  if (!task.isAutomatic) return null;
-
-  // Патенты: разблокируются с 1 января года
-  if (task.id.startsWith('patent-')) {
-    const parts = task.id.split('-');
-    const year = parseInt(parts[parts.length - 1], 10);
-    return !isNaN(year) ? new Date(year, 0, 1) : null;
-  }
-
-  // Автоматические задачи по правилам
-  const regex = /auto-.*-([A-Za-z0-9_]+)-(\d{4})-(\d+)$/;
-  const match = task.id.match(regex);
-  if (!match) return null;
-
-  const ruleId = match[1];
-  const year = parseInt(match[2], 10);
-  const periodIndex = parseInt(match[3], 10);
-
-  // TODO: Правила теперь загружаются из БД, нужно передавать их через параметр
-  // Пока возвращаем null — блокировка по периоду временно отключена
-  // const taskRule = rules.find(r => r.id === ruleId);
-  // if (!taskRule) return null;
-
-  // Временное решение: не блокируем задачи по периоду до интеграции с БД правил
-  return null;
-
-  let periodStartDate: Date;
-
-  switch (taskRule.periodicity) {
-    case RepeatFrequency.Monthly: {
-      const monthOffset = taskRule.dateConfig.monthOffset || 0;
-      periodStartDate = new Date(year, periodIndex + monthOffset, 1);
-      // Для задач второго периода (с 23 по конец месяца)
-      if (taskRule.id.includes('_2') && monthOffset === 0) {
-        periodStartDate.setDate(23);
-      }
-      break;
-    }
-
-    case RepeatFrequency.Quarterly: {
-      // Период начинается с месяца выполнения задачи
-      const quarterStartMonth = (periodIndex + 1) * 3;
-      const quarterMonthOffset = taskRule.dateConfig.quarterMonthOffset || 1;
-      periodStartDate = new Date(year, quarterStartMonth + quarterMonthOffset - 1, 1);
-      break;
-    }
-
-    case RepeatFrequency.Yearly: {
-      // Разблокировка с 1 числа месяца срока выполнения
-      const dueMonth = taskRule.dateConfig.month ?? 0;
-
-      if (taskRule.dateConfig.specialRule === 'LAST_WORKING_DAY_OF_YEAR' || taskRule.id.includes('DECEMBER')) {
-        // Декабрьские задачи — разблокируем 1 декабря
-        periodStartDate = new Date(year, 11, 1);
-      } else {
-        // Обычные годовые задачи — разблокируем 1-го числа месяца срока
-        periodStartDate = new Date(year, dueMonth, 1);
-      }
-      break;
-    }
-
-    default:
-      return null;
-  }
-
-  return periodStartDate;
-};
-
+/**
+ * Проверка допуска к выполнению по completionLeadDays.
+ * Задача заблокирована, если до срока больше дней, чем completionLeadDays.
+ */
 export const isTaskLocked = (task: Task): boolean => {
-  if (!task.isAutomatic || task.isPeriodLocked === false) return false;
-
-  const periodStartDate = getPeriodStartDateForTask(task);
-  if (!periodStartDate) return false;
+  const leadDays = task.completionLeadDays ?? 3;
+  if (leadDays < 0) return false; // без ограничений
 
   const now = new Date();
   now.setHours(0, 0, 0, 0);
+  const due = new Date(task.dueDate);
+  due.setHours(0, 0, 0, 0);
 
-  return now < periodStartDate;
+  const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  return daysUntilDue > leadDays;
 };
 
 export const updateTaskStatuses = (tasks: Task[]): Task[] => {
