@@ -416,7 +416,7 @@ const StaffDetailsTab: React.FC<{ employees: Employee[], employeeId: string | nu
                     {(() => {
                         const emp = employees.find(e => e.id === selectedEmployee);
                         const DEFAULT_TARIFF = 7000;
-                        const totalIncome = linkedClients.reduce((sum, client) => sum + (client.tariffPrice || DEFAULT_TARIFF), 0);
+                        const totalIncome = linkedClients.reduce((sum, client) => sum + (client.servicePrice || client.tariffPrice || DEFAULT_TARIFF), 0);
                         const employeePercent = parseFloat(emp?.percent || '0') || 0;
                         const salary = Math.round(totalIncome * employeePercent / 100);
 

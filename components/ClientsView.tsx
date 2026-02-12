@@ -99,6 +99,11 @@ interface Client {
     credentials?: ServiceCredential[];
     // Периодичность авансов по прибыли (только для ОСНО, ООО/АО)
     profitAdvancePeriodicity?: 'monthly' | 'quarterly';
+    // Комплекс обслуживания
+    packageId?: string;
+    packageName?: string;
+    servicePrice?: number;
+    servicePriceManual?: boolean;
 }
 
 interface Comment {
@@ -254,9 +259,13 @@ const adaptLegalEntityToClient = (le: LegalEntity): Client => {
         employeeCount: le.employeeCount || (le.hasEmployees ? 1 : 0),
         status: le.clientStatus || 'permanent',
         tariff: {
-            name: le.tariffName || 'Стандарт',
-            price: le.tariffPrice || 15000
+            name: le.packageName || le.tariffName || 'Стандарт',
+            price: le.servicePrice || le.tariffPrice || 15000
         },
+        packageId: le.packageId,
+        packageName: le.packageName,
+        servicePrice: le.servicePrice,
+        servicePriceManual: le.servicePriceManual,
         managerId: le.accountantId || '',
         managerName: le.accountantName || '',
         createdAt: le.createdAt instanceof Date ? le.createdAt.toISOString() : String(le.createdAt || ''),
@@ -1011,6 +1020,15 @@ const ClientManageTab: React.FC<{
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [legalForm, setLegalForm] = useState<LegalForm>('OOO');
 
+    // Загрузка комплексов
+    const [packages, setPackages] = useState<any[]>([]);
+    React.useEffect(() => {
+        fetch(`${API_BASE}/packages`)
+            .then(r => r.json())
+            .then(data => setPackages(Array.isArray(data) ? data : []))
+            .catch(() => setPackages([]));
+    }, []);
+
     // Синхронизация с родительским компонентом при смене initialClientId
     React.useEffect(() => {
         if (initialClientId && initialClientId !== selectedClientId) {
@@ -1049,6 +1067,9 @@ const ClientManageTab: React.FC<{
         taxSystem: '',
         status: '',
         tariff: '',
+        packageId: '',
+        servicePrice: '',
+        servicePriceManual: false,
         accountant: '',
         legalAddress: '',
         actualAddress: '',
@@ -1140,9 +1161,9 @@ const ClientManageTab: React.FC<{
         }
 
         // Тариф - обязательное
-        if (!formData.tariff) {
-            errors.push('Тариф');
-            invalidFields.add('tariff');
+        if (!formData.packageId) {
+            errors.push('Комплекс обслуживания');
+            invalidFields.add('packageId');
         }
 
         // БИК - обязательное
@@ -1288,9 +1309,26 @@ const ClientManageTab: React.FC<{
                 // Статус клиента
                 clientStatus: (formData.status as 'permanent' | 'onetime') || 'permanent',
 
-                // Тариф
-                tariffName: formData.tariff || 'Стандарт',
-                tariffPrice: formData.tariff === 'Базовый' ? 5000 : formData.tariff === 'Премиум' ? 35000 : 15000,
+                // Комплекс / Стоимость
+                packageId: formData.packageId || undefined,
+                packageName: (() => {
+                    const pkg = packages.find(p => p.id === formData.packageId);
+                    return pkg ? pkg.name : undefined;
+                })(),
+                servicePrice: formData.servicePrice ? parseFloat(formData.servicePrice) : (() => {
+                    const pkg = packages.find(p => p.id === formData.packageId);
+                    return pkg ? pkg.price : undefined;
+                })(),
+                servicePriceManual: formData.servicePriceManual || false,
+                // Legacy
+                tariffName: (() => {
+                    const pkg = packages.find(p => p.id === formData.packageId);
+                    return pkg ? pkg.name : formData.tariff || undefined;
+                })(),
+                tariffPrice: formData.servicePrice ? parseFloat(formData.servicePrice) : (() => {
+                    const pkg = packages.find(p => p.id === formData.packageId);
+                    return pkg ? pkg.price : undefined;
+                })(),
 
                 // Банковские реквизиты
                 bankName: formData.bankName || undefined,
@@ -1381,7 +1419,10 @@ const ClientManageTab: React.FC<{
                 ogrn: currentClient.ogrn || '',
                 taxSystem: currentClient.taxSystem || 'USN6',
                 status: currentClient.status || 'permanent',
-                tariff: currentClient.tariff?.name || 'Стандарт',
+                tariff: currentClient.tariff?.name || '',
+                packageId: currentClient.packageId || '',
+                servicePrice: currentClient.servicePrice ? String(currentClient.servicePrice) : '',
+                servicePriceManual: currentClient.servicePriceManual || false,
                 accountant: currentClient.managerId || '',
                 legalAddress: currentClient.legalAddress || '',
                 actualAddress: currentClient.actualAddress || '',
@@ -1408,6 +1449,9 @@ const ClientManageTab: React.FC<{
                 taxSystem: '',
                 status: '',
                 tariff: '',
+                packageId: '',
+                servicePrice: '',
+                servicePriceManual: false,
                 accountant: '',
                 legalAddress: '',
                 actualAddress: '',
@@ -1652,13 +1696,36 @@ const ClientManageTab: React.FC<{
                                 </select>
                             </div>
                             <div>
-                                <label className={labelClass}>Тариф *</label>
-                                <select className={getFieldClass('tariff')} value={formData.tariff} onChange={(e) => updateField('tariff', e.target.value)}>
+                                <label className={labelClass}>Комплекс обслуживания *</label>
+                                <select className={getFieldClass('packageId')} value={formData.packageId} onChange={(e) => {
+                                    updateField('packageId', e.target.value);
+                                    if (!formData.servicePriceManual) {
+                                        const pkg = packages.find(p => p.id === e.target.value);
+                                        updateField('servicePrice', pkg ? String(pkg.price) : '');
+                                    }
+                                }}>
                                     <option value="">Выберите...</option>
-                                    <option value="Базовый">Базовый — 5 000 ₽</option>
-                                    <option value="Стандарт">Стандарт — 15 000 ₽</option>
-                                    <option value="Премиум">Премиум — 35 000 ₽</option>
+                                    {packages.map(pkg => (
+                                        <option key={pkg.id} value={pkg.id}>{pkg.name} — {pkg.price?.toLocaleString()} ₽/мес</option>
+                                    ))}
                                 </select>
+                            </div>
+                            <div>
+                                <label className={labelClass}>Стоимость ₽/мес</label>
+                                <div className="flex items-center gap-2">
+                                    <input type="text" inputMode="decimal" className={inputClass + ' flex-1'}
+                                        value={formData.servicePrice}
+                                        onChange={e => { if (/^\d*\.?\d{0,2}$/.test(e.target.value) || e.target.value === '') updateField('servicePrice', e.target.value); }}
+                                        placeholder={(() => { const pkg = packages.find(p => p.id === formData.packageId); return pkg ? String(pkg.price) : '0'; })()}
+                                        disabled={!formData.servicePriceManual && !!formData.packageId}
+                                    />
+                                    <label className="flex items-center gap-1 text-[10px] text-slate-500 whitespace-nowrap cursor-pointer">
+                                        <input type="checkbox" checked={formData.servicePriceManual as boolean}
+                                            onChange={e => setFormData(prev => ({ ...prev, servicePriceManual: e.target.checked }))}
+                                            className="rounded" />
+                                        Ручная
+                                    </label>
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-[10px] text-slate-500 mb-1">Бухгалтер</label>

@@ -96,7 +96,12 @@ export interface LegalEntity {
   // Статус клиента
   clientStatus?: 'permanent' | 'onetime';
 
-  // Тариф
+  // Услуги / Комплекс
+  packageId?: string;          // ссылка на комплекс из ServicesView
+  packageName?: string;        // название комплекса (для отображения)
+  servicePrice?: number;       // итоговая стоимость обслуживания
+  servicePriceManual?: boolean; // true = ручная цена, не пересчитывать
+  // Legacy (обратная совместимость)
   tariffName?: string;
   tariffPrice?: number;
 
