@@ -1,12 +1,12 @@
 // contexts/AuthContext.tsx
-// Контекст авторизации (пока заглушка для будущей реализации)
+// Контекст авторизации — реальный JWT через API
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, AuthState, LoginCredentials, RegisterData } from '../types/auth';
+import { User, AuthState, LoginCredentials } from '../types/auth';
+import { API_BASE_URL } from '../apiConfig';
 
 interface AuthContextType extends AuthState {
     login: (credentials: LoginCredentials) => Promise<boolean>;
-    register: (data: RegisterData) => Promise<boolean>;
     logout: () => void;
     clearError: () => void;
 }
@@ -44,19 +44,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
             if (savedToken && savedUser) {
                 try {
-                    const user = JSON.parse(savedUser) as User;
-                    setState({
-                        isAuthenticated: true,
-                        isLoading: false,
-                        user,
-                        token: savedToken,
-                        error: null,
+                    // Проверяем что токен ещё валиден через API
+                    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+                        headers: { 'Authorization': `Bearer ${savedToken}` }
                     });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        setState({
+                            isAuthenticated: true,
+                            isLoading: false,
+                            user: data.user,
+                            token: savedToken,
+                            error: null,
+                        });
+                    } else {
+                        // Токен истёк или невалидный
+                        localStorage.removeItem('auth_token');
+                        localStorage.removeItem('auth_user');
+                        setState({ ...initialState, isLoading: false });
+                    }
                 } catch {
-                    // Невалидные данные - очищаем
-                    localStorage.removeItem('auth_token');
-                    localStorage.removeItem('auth_user');
-                    setState({ ...initialState, isLoading: false });
+                    // Сервер недоступен — используем сохранённые данные
+                    try {
+                        const user = JSON.parse(savedUser) as User;
+                        setState({
+                            isAuthenticated: true,
+                            isLoading: false,
+                            user,
+                            token: savedToken,
+                            error: null,
+                        });
+                    } catch {
+                        localStorage.removeItem('auth_token');
+                        localStorage.removeItem('auth_user');
+                        setState({ ...initialState, isLoading: false });
+                    }
                 }
             } else {
                 setState({ ...initialState, isLoading: false });
@@ -70,80 +93,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
         try {
-            // TODO: Заменить на реальный API-запрос
-            // const response = await fetch('/api/auth/login', {
-            //   method: 'POST',
-            //   headers: { 'Content-Type': 'application/json' },
-            //   body: JSON.stringify(credentials),
-            // });
+            const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(credentials),
+            });
 
-            // Временная заглушка для локальной разработки
-            console.log('Login attempt:', credentials.email);
+            const data = await response.json();
 
-            // Симуляция успешного входа для тестирования
-            const mockUser: User = {
-                id: 'local-user-1',
-                email: credentials.email,
-                name: 'Локальный пользователь',
-                role: 'admin',
-            };
-            const mockToken = 'local-dev-token-' + Date.now();
+            if (!response.ok || !data.success) {
+                setState(prev => ({
+                    ...prev,
+                    isLoading: false,
+                    error: data.error || 'Ошибка входа',
+                }));
+                return false;
+            }
 
-            localStorage.setItem('auth_token', mockToken);
-            localStorage.setItem('auth_user', JSON.stringify(mockUser));
+            // Сохраняем токен и данные пользователя
+            localStorage.setItem('auth_token', data.token);
+            localStorage.setItem('auth_user', JSON.stringify(data.user));
 
             setState({
                 isAuthenticated: true,
                 isLoading: false,
-                user: mockUser,
-                token: mockToken,
+                user: data.user,
+                token: data.token,
                 error: null,
             });
 
+            console.log(`[Auth] Logged in as: ${data.user.name} (${data.user.role})`);
             return true;
         } catch (error) {
             setState(prev => ({
                 ...prev,
                 isLoading: false,
-                error: 'Ошибка входа. Проверьте подключение.',
-            }));
-            return false;
-        }
-    };
-
-    const register = async (data: RegisterData): Promise<boolean> => {
-        setState(prev => ({ ...prev, isLoading: true, error: null }));
-
-        try {
-            // TODO: Заменить на реальный API-запрос
-            console.log('Register attempt:', data.email);
-
-            // Временная заглушка
-            const mockUser: User = {
-                id: 'local-user-' + Date.now(),
-                email: data.email,
-                name: data.name,
-                role: 'user',
-            };
-            const mockToken = 'local-dev-token-' + Date.now();
-
-            localStorage.setItem('auth_token', mockToken);
-            localStorage.setItem('auth_user', JSON.stringify(mockUser));
-
-            setState({
-                isAuthenticated: true,
-                isLoading: false,
-                user: mockUser,
-                token: mockToken,
-                error: null,
-            });
-
-            return true;
-        } catch (error) {
-            setState(prev => ({
-                ...prev,
-                isLoading: false,
-                error: 'Ошибка регистрации.',
+                error: 'Ошибка подключения к серверу',
             }));
             return false;
         }
@@ -170,7 +155,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             value={{
                 ...state,
                 login,
-                register,
                 logout,
                 clearError,
             }}

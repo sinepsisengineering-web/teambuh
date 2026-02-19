@@ -1,17 +1,12 @@
 // components/LoginScreen.tsx
-// Экран входа и регистрации — использует Tailwind CSS v4
+// Экран входа — авторизация через JWT
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
-type AuthMode = 'login' | 'register';
-
 export const LoginScreen: React.FC = () => {
-    const { login, register, isLoading, error, clearError } = useAuth();
-    const [mode, setMode] = useState<AuthMode>('login');
+    const { login, isLoading, error, clearError } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [name, setName] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
     const [localError, setLocalError] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -20,33 +15,11 @@ export const LoginScreen: React.FC = () => {
         clearError();
 
         if (!email || !password) {
-            setLocalError('Заполните все обязательные поля');
+            setLocalError('Заполните все поля');
             return;
         }
 
-        if (mode === 'register') {
-            if (!name) {
-                setLocalError('Введите имя');
-                return;
-            }
-            if (password !== confirmPassword) {
-                setLocalError('Пароли не совпадают');
-                return;
-            }
-            if (password.length < 6) {
-                setLocalError('Пароль должен быть не менее 6 символов');
-                return;
-            }
-            await register({ email, password, name });
-        } else {
-            await login({ email, password });
-        }
-    };
-
-    const toggleMode = () => {
-        setMode(mode === 'login' ? 'register' : 'login');
-        setLocalError(null);
-        clearError();
+        await login({ email, password });
     };
 
     const displayError = localError || error;
@@ -68,27 +41,13 @@ export const LoginScreen: React.FC = () => {
                     </div>
                     <h1 className="text-3xl font-bold text-white mb-2">TeamBuh</h1>
                     <p className="text-slate-400 text-sm">
-                        {mode === 'login' ? 'Войдите в свой аккаунт' : 'Создайте новый аккаунт'}
+                        Войдите в свой аккаунт
                     </p>
                 </div>
 
                 {/* Форма */}
                 <div className="bg-white/10 backdrop-blur-[16px] rounded-xl p-6 border border-white/10 shadow-xl">
                     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-                        {/* Имя (только для регистрации) */}
-                        {mode === 'register' && (
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Имя</label>
-                                <input
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
-                                    placeholder="Ваше имя"
-                                />
-                            </div>
-                        )}
-
                         {/* Email */}
                         <div>
                             <label className="block text-sm font-medium text-slate-400 mb-2">Email</label>
@@ -98,6 +57,7 @@ export const LoginScreen: React.FC = () => {
                                 onChange={(e) => setEmail(e.target.value)}
                                 className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
                                 placeholder="your@email.com"
+                                autoComplete="email"
                             />
                         </div>
 
@@ -110,22 +70,9 @@ export const LoginScreen: React.FC = () => {
                                 onChange={(e) => setPassword(e.target.value)}
                                 className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
                                 placeholder="••••••••"
+                                autoComplete="current-password"
                             />
                         </div>
-
-                        {/* Подтверждение пароля */}
-                        {mode === 'register' && (
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Подтвердите пароль</label>
-                                <input
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
-                                    placeholder="••••••••"
-                                />
-                            </div>
-                        )}
 
                         {/* Ошибка */}
                         {displayError && (
@@ -144,25 +91,9 @@ export const LoginScreen: React.FC = () => {
                                 ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}
                             `}
                         >
-                            {isLoading ? 'Загрузка...' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+                            {isLoading ? 'Вход...' : 'Войти'}
                         </button>
                     </form>
-
-                    {/* Переключатель режима */}
-                    <div className="mt-6 text-center text-slate-400 text-sm">
-                        {mode === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?'}
-                        <button
-                            onClick={toggleMode}
-                            className="ml-2 bg-transparent border-none cursor-pointer text-primary-light font-medium hover:text-white transition-colors"
-                        >
-                            {mode === 'login' ? 'Зарегистрироваться' : 'Войти'}
-                        </button>
-                    </div>
-                </div>
-
-                {/* Подсказка */}
-                <div className="mt-6 p-4 bg-yellow-500/10 border border-yellow-500 rounded-lg text-yellow-500 text-sm text-center">
-                    🛠️ Режим разработки: любые данные будут приняты
                 </div>
             </div>
         </div>

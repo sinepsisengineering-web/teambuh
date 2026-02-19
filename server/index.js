@@ -84,6 +84,105 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // =============================================
+// АВТОРИЗАЦИЯ (JWT)
+// =============================================
+
+const auth = require('./auth');
+
+// POST /api/auth/login — вход
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ success: false, error: 'Email и пароль обязательны' });
+        }
+
+        // Ищем сотрудника по email в default tenant
+        const tenantPath = getTenantPath(DEFAULT_TENANT);
+        const employee = auth.findEmployeeByEmail(tenantPath, email);
+
+        if (!employee) {
+            return res.status(401).json({ success: false, error: 'Неверный email или пароль' });
+        }
+
+        // Проверяем пароль
+        if (!employee.passwordHash) {
+            return res.status(401).json({ success: false, error: 'Аккаунт не активирован. Обратитесь к администратору.' });
+        }
+
+        const isValid = await auth.comparePassword(password, employee.passwordHash);
+        if (!isValid) {
+            return res.status(401).json({ success: false, error: 'Неверный email или пароль' });
+        }
+
+        // Генерируем токен
+        const user = {
+            id: employee.id,
+            email: employee.email,
+            name: employee.name || employee.lastName || 'Пользователь',
+            role: employee.role || 'accountant',
+            tenantId: DEFAULT_TENANT,
+        };
+
+        const token = auth.generateToken(user);
+
+        console.log(`[Auth] Login successful: ${user.email} (${user.role})`);
+
+        res.json({ success: true, token, user });
+    } catch (error) {
+        console.error('[Auth] Login error:', error);
+        res.status(500).json({ success: false, error: 'Внутренняя ошибка сервера' });
+    }
+});
+
+// GET /api/auth/me — проверка текущего токена
+app.get('/api/auth/me', auth.authMiddleware, (req, res) => {
+    res.json({ success: true, user: req.user });
+});
+
+// POST /api/auth/change-password — смена пароля
+app.post('/api/auth/change-password', auth.authMiddleware, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const tenantPath = getTenantPath(req.user.tenantId || DEFAULT_TENANT);
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ success: false, error: 'Укажите текущий и новый пароль' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ success: false, error: 'Новый пароль должен быть не менее 6 символов' });
+        }
+
+        const employee = auth.findEmployeeById(tenantPath, req.user.id);
+        if (!employee || !employee.passwordHash) {
+            return res.status(404).json({ success: false, error: 'Пользователь не найден' });
+        }
+
+        const isValid = await auth.comparePassword(currentPassword, employee.passwordHash);
+        if (!isValid) {
+            return res.status(401).json({ success: false, error: 'Неверный текущий пароль' });
+        }
+
+        const newHash = await auth.hashPassword(newPassword);
+        auth.updateEmployeeProfile(tenantPath, req.user.id, { passwordHash: newHash });
+
+        console.log(`[Auth] Password changed: ${req.user.email}`);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[Auth] Change password error:', error);
+        res.status(500).json({ success: false, error: 'Ошибка смены пароля' });
+    }
+});
+
+// =============================================
+// MIDDLEWARE: Защита API-роутов
+// Все /api/:tenantId/* роуты требуют JWT-токен
+// =============================================
+app.use('/api/:tenantId', auth.authMiddleware);
+
+// =============================================
 // API ENDPOINTS (с поддержкой tenantId)
 // =============================================
 

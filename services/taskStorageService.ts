@@ -1,7 +1,7 @@
 // services/taskStorageService.ts
 // Сервис работы с задачами через API (фронтенд)
 
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 
 const SERVER_URL = API_BASE_URL;
 const TENANT_ID = 'org_default';
@@ -73,7 +73,7 @@ export const getAllTasks = async (filters?: {
         const queryString = params.toString();
         const url = `${SERVER_URL}/api/${TENANT_ID}/tasks${queryString ? `?${queryString}` : ''}`;
 
-        const response = await fetch(url);
+        const response = await authFetch(url);
         if (!response.ok) {
             console.warn('[TaskStorage] Failed to get tasks:', response.status);
             return [];
@@ -88,7 +88,7 @@ export const getAllTasks = async (filters?: {
 // Получить задачу по ID
 export const getTaskById = async (taskId: string): Promise<StoredTask | null> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}`);
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}`);
         if (!response.ok) {
             return null;
         }
@@ -118,7 +118,7 @@ export const createTask = async (task: {
     dueDateRule?: string;  // Правило переноса даты с выходных
 }): Promise<StoredTask | null> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks`, {
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -160,7 +160,7 @@ export const createManyTasks = async (tasks: {
     dueDateRule?: string;  // Правило переноса даты с выходных
 }[]): Promise<number> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/bulk`, {
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/bulk`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -190,7 +190,7 @@ export const updateTask = async (
     updates: Partial<StoredTask>
 ): Promise<StoredTask | null> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}`, {
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updates)
@@ -214,7 +214,7 @@ export const completeTask = async (
     completedByName?: string
 ): Promise<StoredTask | null> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}/complete`, {
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}/complete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ completedById, completedByName })
@@ -234,7 +234,7 @@ export const completeTask = async (
 // Вернуть задачу в работу
 export const reopenTask = async (taskId: string): Promise<StoredTask | null> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}/reopen`, {
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}/reopen`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -253,7 +253,7 @@ export const reopenTask = async (taskId: string): Promise<StoredTask | null> => 
 // Удалить задачу (soft delete)
 export const deleteTask = async (taskId: string): Promise<boolean> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}`, {
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}`, {
             method: 'DELETE'
         });
 
@@ -267,7 +267,7 @@ export const deleteTask = async (taskId: string): Promise<boolean> => {
 // Архивировать задачу
 export const archiveTask = async (taskId: string): Promise<boolean> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}/archive`, {
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks/${taskId}/archive`, {
             method: 'POST'
         });
 
@@ -281,7 +281,7 @@ export const archiveTask = async (taskId: string): Promise<boolean> => {
 // Получить статистику
 export const getTaskStats = async (): Promise<TaskStats> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks-stats`);
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks-stats`);
         if (!response.ok) {
             return { total: 0, pending: 0, completed: 0, archived: 0 };
         }

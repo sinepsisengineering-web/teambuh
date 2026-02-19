@@ -5,7 +5,7 @@
 import { TaskRule, RuleCategory, TaskType, DateCalculationConfig, RepeatFrequency, TaskDueDateRule, LegalEntity } from '../types';
 // Импорт справочника типов для нормализации ID
 import { normalizeLegalForm, normalizeTaxSystem } from '../constants/dictionaries';
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 
 // API конфигурация
 const SERVER_URL = API_BASE_URL;
@@ -108,7 +108,7 @@ const getBaseUrl = (tenantId = TENANT_ID) => {
  * Загружает актуальные правила и обновляет tenant DB
  */
 export const syncRulesOnLogin = async (tenantId = TENANT_ID): Promise<SyncResponse> => {
-    const response = await fetch(`${getBaseUrl(tenantId)}/sync`);
+    const response = await authFetch(`${getBaseUrl(tenantId)}/sync`);
     if (!response.ok) {
         throw new Error('Failed to sync rules');
     }
@@ -119,7 +119,7 @@ export const syncRulesOnLogin = async (tenantId = TENANT_ID): Promise<SyncRespon
  * Получить все правила тенанта
  */
 export const getAllRules = async (tenantId = TENANT_ID): Promise<DbRule[]> => {
-    const response = await fetch(getBaseUrl(tenantId));
+    const response = await authFetch(getBaseUrl(tenantId));
     if (!response.ok) {
         if (response.status === 404) return [];
         throw new Error('Failed to fetch rules');
@@ -131,7 +131,7 @@ export const getAllRules = async (tenantId = TENANT_ID): Promise<DbRule[]> => {
  * Получить правила по источнику (system/custom)
  */
 export const getRulesBySource = async (source: 'system' | 'custom', tenantId = TENANT_ID): Promise<DbRule[]> => {
-    const response = await fetch(`${getBaseUrl(tenantId)}?source=${source}`);
+    const response = await authFetch(`${getBaseUrl(tenantId)}?source=${source}`);
     if (!response.ok) {
         throw new Error('Failed to fetch rules by source');
     }
@@ -142,7 +142,7 @@ export const getRulesBySource = async (source: 'system' | 'custom', tenantId = T
  * Получить правила по категории
  */
 export const getRulesByCategory = async (category: string, tenantId = TENANT_ID): Promise<DbRule[]> => {
-    const response = await fetch(`${getBaseUrl(tenantId)}?category=${encodeURIComponent(category)}`);
+    const response = await authFetch(`${getBaseUrl(tenantId)}?category=${encodeURIComponent(category)}`);
     if (!response.ok) {
         throw new Error('Failed to fetch rules by category');
     }
@@ -153,7 +153,7 @@ export const getRulesByCategory = async (category: string, tenantId = TENANT_ID)
  * Получить правило по ID
  */
 export const getRuleById = async (ruleId: string, tenantId = TENANT_ID): Promise<DbRule | null> => {
-    const response = await fetch(`${getBaseUrl(tenantId)}/${ruleId}`);
+    const response = await authFetch(`${getBaseUrl(tenantId)}/${ruleId}`);
     if (response.status === 404) return null;
     if (!response.ok) throw new Error('Failed to fetch rule');
     return response.json();
@@ -163,7 +163,7 @@ export const getRuleById = async (ruleId: string, tenantId = TENANT_ID): Promise
  * Создать новое правило (только custom)
  */
 export const createRule = async (data: CreateRuleData, tenantId = TENANT_ID): Promise<DbRule> => {
-    const response = await fetch(getBaseUrl(tenantId), {
+    const response = await authFetch(getBaseUrl(tenantId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
@@ -176,7 +176,7 @@ export const createRule = async (data: CreateRuleData, tenantId = TENANT_ID): Pr
  * Обновить правило (только custom)
  */
 export const updateRule = async (ruleId: string, updates: Partial<CreateRuleData>, tenantId = TENANT_ID): Promise<DbRule> => {
-    const response = await fetch(`${getBaseUrl(tenantId)}/${ruleId}`, {
+    const response = await authFetch(`${getBaseUrl(tenantId)}/${ruleId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -189,7 +189,7 @@ export const updateRule = async (ruleId: string, updates: Partial<CreateRuleData
  * Удалить правило (только custom)
  */
 export const deleteRule = async (ruleId: string, tenantId = TENANT_ID): Promise<boolean> => {
-    const response = await fetch(`${getBaseUrl(tenantId)}/${ruleId}`, {
+    const response = await authFetch(`${getBaseUrl(tenantId)}/${ruleId}`, {
         method: 'DELETE'
     });
     if (!response.ok) throw new Error('Failed to delete rule');

@@ -5,6 +5,7 @@
 // По умолчанию: org_default
 
 const Database = require('better-sqlite3');
+const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 
@@ -66,16 +67,19 @@ const adminDir = path.join(CLIENT_DATA_DIR, 'employees', adminId);
 if (!fs.existsSync(adminDir)) {
     fs.mkdirSync(adminDir, { recursive: true });
 
+    // Хэшируем пароль через bcrypt (синхронно для скрипта)
+    const defaultPassword = 'admin123';
+    const passwordHash = bcrypt.hashSync(defaultPassword, 10);
+
     const adminProfile = {
         id: adminId,
         name: 'Администратор',
-        role: 'admin',
+        lastName: 'Администратор',
+        role: 'super-admin',
         email: 'admin@teambuh.local',
         phone: '',
         position: 'Супер-Администратор',
-        login: 'admin',
-        // TODO: В Части 2 заменить на хэш (bcrypt)
-        password: 'admin123',
+        passwordHash: passwordHash,
         isActive: true,
         createdAt: new Date().toISOString()
     };
@@ -86,7 +90,7 @@ if (!fs.existsSync(adminDir)) {
     );
 
     console.log('  👤 Создан Супер-Админ:');
-    console.log('     Логин:  admin');
+    console.log('     Email:  admin@teambuh.local');
     console.log('     Пароль: admin123');
     console.log('     ⚠️  Смените пароль после первого входа!');
 } else {

@@ -1,11 +1,14 @@
 // types/auth.ts
 // Типы для системы авторизации
 
+export type UserRole = 'super-admin' | 'admin' | 'accountant';
+
 export interface User {
     id: string;
     email: string;
     name: string;
-    role: 'admin' | 'user' | 'viewer';
+    role: UserRole;
+    tenantId?: string;
     createdAt?: Date;
 }
 
@@ -20,12 +23,6 @@ export interface AuthState {
 export interface LoginCredentials {
     email: string;
     password: string;
-}
-
-export interface RegisterData {
-    email: string;
-    password: string;
-    name: string;
 }
 
 export interface AuthResponse {

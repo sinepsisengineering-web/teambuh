@@ -1,9 +1,8 @@
 // services/storageService.ts
 // Сервис хранения данных — использует сервер API
-// TODO: При переходе на production — обновить SERVER_URL
 
 import { LegalEntity, Employee, UploadedDocument } from '../types';
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 
 // Конфигурация сервера
 const SERVER_URL = API_BASE_URL;
@@ -52,7 +51,7 @@ export class ServerStorageProvider implements StorageProvider {
     // --- Клиенты ---
 
     async saveClient(client: LegalEntity): Promise<LegalEntity> {
-        const response = await fetch(this.getUrl('/clients'), {
+        const response = await authFetch(this.getUrl('/clients'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(client),
@@ -62,20 +61,20 @@ export class ServerStorageProvider implements StorageProvider {
     }
 
     async loadClient(id: string): Promise<LegalEntity | null> {
-        const response = await fetch(this.getUrl(`/clients/${id}`));
+        const response = await authFetch(this.getUrl(`/clients/${id}`));
         if (response.status === 404) return null;
         if (!response.ok) throw new Error('Failed to load client');
         return response.json();
     }
 
     async loadAllClients(): Promise<LegalEntity[]> {
-        const response = await fetch(this.getUrl('/clients'));
+        const response = await authFetch(this.getUrl('/clients'));
         if (!response.ok) throw new Error('Failed to load clients');
         return response.json();
     }
 
     async deleteClient(id: string): Promise<void> {
-        const response = await fetch(this.getUrl(`/clients/${id}`), {
+        const response = await authFetch(this.getUrl(`/clients/${id}`), {
             method: 'DELETE',
         });
         if (!response.ok) throw new Error('Failed to delete client');
@@ -84,7 +83,7 @@ export class ServerStorageProvider implements StorageProvider {
     // --- Сотрудники ---
 
     async saveEmployee(employee: Employee): Promise<Employee> {
-        const response = await fetch(this.getUrl('/employees'), {
+        const response = await authFetch(this.getUrl('/employees'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(employee),
@@ -94,20 +93,20 @@ export class ServerStorageProvider implements StorageProvider {
     }
 
     async loadEmployee(id: string): Promise<Employee | null> {
-        const response = await fetch(this.getUrl(`/employees/${id}`));
+        const response = await authFetch(this.getUrl(`/employees/${id}`));
         if (response.status === 404) return null;
         if (!response.ok) throw new Error('Failed to load employee');
         return response.json();
     }
 
     async loadAllEmployees(): Promise<Employee[]> {
-        const response = await fetch(this.getUrl('/employees'));
+        const response = await authFetch(this.getUrl('/employees'));
         if (!response.ok) throw new Error('Failed to load employees');
         return response.json();
     }
 
     async deleteEmployee(id: string): Promise<void> {
-        const response = await fetch(this.getUrl(`/employees/${id}`), {
+        const response = await authFetch(this.getUrl(`/employees/${id}`), {
             method: 'DELETE',
         });
         if (!response.ok) throw new Error('Failed to delete employee');
@@ -120,7 +119,7 @@ export class ServerStorageProvider implements StorageProvider {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await fetch(this.getUrl(`/${entityType}/${entityId}/documents`), {
+        const response = await authFetch(this.getUrl(`/${entityType}/${entityId}/documents`), {
             method: 'POST',
             body: formData,
         });
@@ -129,13 +128,13 @@ export class ServerStorageProvider implements StorageProvider {
     }
 
     async loadDocuments(entityType: 'clients' | 'employees', entityId: string): Promise<UploadedDocument[]> {
-        const response = await fetch(this.getUrl(`/${entityType}/${entityId}/documents`));
+        const response = await authFetch(this.getUrl(`/${entityType}/${entityId}/documents`));
         if (!response.ok) throw new Error('Failed to load documents');
         return response.json();
     }
 
     async deleteDocument(entityType: 'clients' | 'employees', entityId: string, filename: string): Promise<void> {
-        const response = await fetch(this.getUrl(`/${entityType}/${entityId}/documents/${filename}`), {
+        const response = await authFetch(this.getUrl(`/${entityType}/${entityId}/documents/${filename}`), {
             method: 'DELETE',
         });
         if (!response.ok) throw new Error('Failed to delete document');
@@ -155,7 +154,7 @@ export const storage = new ServerStorageProvider();
 export type ArchiveType = 'clients' | 'employees' | 'rules';
 
 export const archiveItem = async (type: ArchiveType, item: any, tenantId: string = DEFAULT_TENANT): Promise<void> => {
-    const response = await fetch(`${SERVER_URL}/api/${tenantId}/archive/${type}`, {
+    const response = await authFetch(`${SERVER_URL}/api/${tenantId}/archive/${type}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(item)
@@ -164,7 +163,7 @@ export const archiveItem = async (type: ArchiveType, item: any, tenantId: string
 };
 
 export const restoreItem = async (type: ArchiveType, itemId: string, tenantId: string = DEFAULT_TENANT): Promise<any> => {
-    const response = await fetch(`${SERVER_URL}/api/${tenantId}/archive/${type}/${itemId}/restore`, {
+    const response = await authFetch(`${SERVER_URL}/api/${tenantId}/archive/${type}/${itemId}/restore`, {
         method: 'POST'
     });
     if (!response.ok) throw new Error('Failed to restore item');
@@ -172,14 +171,14 @@ export const restoreItem = async (type: ArchiveType, itemId: string, tenantId: s
 };
 
 export const deleteItemForever = async (type: ArchiveType, itemId: string, tenantId: string = DEFAULT_TENANT): Promise<void> => {
-    const response = await fetch(`${SERVER_URL}/api/${tenantId}/archive/${type}/${itemId}`, {
+    const response = await authFetch(`${SERVER_URL}/api/${tenantId}/archive/${type}/${itemId}`, {
         method: 'DELETE'
     });
     if (!response.ok) throw new Error('Failed to delete item');
 };
 
 export const loadArchive = async (type: ArchiveType, tenantId: string = DEFAULT_TENANT): Promise<any[]> => {
-    const response = await fetch(`${SERVER_URL}/api/${tenantId}/archive/${type}`);
+    const response = await authFetch(`${SERVER_URL}/api/${tenantId}/archive/${type}`);
     if (!response.ok) throw new Error('Failed to load archive');
     return response.json();
 };
