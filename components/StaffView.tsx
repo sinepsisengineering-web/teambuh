@@ -12,7 +12,8 @@ import { archiveItem } from '../services/storageService';
 import { useTaskModal } from '../contexts/TaskModalContext';
 import { getStatusIcon, getPriorityBarColor } from '../services/taskIndicators';
 
-const SERVER_URL = 'http://localhost:3001';
+import { API_BASE_URL } from '../apiConfig';
+const SERVER_URL = API_BASE_URL;
 
 type StaffTab = 'list' | 'details' | 'manage';
 

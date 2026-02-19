@@ -1,0 +1,13 @@
+node_modules
+dist
+release
+data
+.git
+.gitignore
+.agent
+.vscode
+*.md
+*.log
+.env
+.env.local
+.env.example

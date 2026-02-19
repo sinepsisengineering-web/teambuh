@@ -5,7 +5,8 @@ import React, { useState, useEffect } from 'react';
 import { UploadedDocument } from '../types';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 
-const SERVER_URL = 'http://localhost:3001';
+import { API_BASE_URL } from '../apiConfig';
+const SERVER_URL = API_BASE_URL;
 const DEFAULT_TENANT = 'org_default';
 
 interface ServerDocumentUploadProps {

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Service, ServicePackage, TargetEntityType, ServicePeriodicity } from '../types';
 
-const API_BASE = 'http://localhost:3001/api/org_default';
+import { API_BASE_URL } from '../apiConfig';
+const API_BASE = `${API_BASE_URL}/api/org_default`;
 
 type FilterMode = 'all' | 'services' | 'packages';
 

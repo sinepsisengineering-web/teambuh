@@ -1,0 +1,31 @@
+# ==========================================
+# Docker Compose для TeamBuh
+# Multi-Instance: одна копия папки = один клиент
+# Разделение по APP_PORT (см. .env)
+# ==========================================
+#
+# БД: SQLite (файловая, встроена в приложение)
+# Отдельный контейнер БД не нужен — все .db файлы
+# живут в ./data и монтируются через volume.
+#
+# Быстрый старт:
+#   1. cp .env.example .env
+#   2. Поменять APP_PORT в .env на уникальный для клиента
+#   3. docker compose up -d --build
+# ==========================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: teambuh-${INSTANCE_NAME:-default}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8001}:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    volumes:
+      # Данные клиента (БД + файлы) — персистентны в папке клиента
+      - ./data:/app/data

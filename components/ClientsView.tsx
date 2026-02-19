@@ -8,6 +8,7 @@ import { MiniCalendar } from './MiniCalendar';
 import { EmployeeAvatar } from './EmployeeAvatar';
 import { ArchiveConfirmModal } from './ArchiveConfirmModal';
 import { LegalEntity, TaxSystem as GlobalTaxSystem, LegalForm as GlobalLegalForm, Employee, UploadedDocument } from '../types';
+import { API_BASE_URL } from '../apiConfig';
 import * as taskStorage from '../services/taskStorageService';
 import { archiveItem, storage } from '../services/storageService';
 import { getStatusIcon as getStatusIconFn } from '../services/taskIndicators';
@@ -1023,7 +1024,7 @@ const ClientManageTab: React.FC<{
     // Загрузка комплексов
     const [packages, setPackages] = useState<any[]>([]);
     React.useEffect(() => {
-        fetch(`${API_BASE}/packages`)
+        fetch(`${API_BASE_URL}/api/org_default/packages`)
             .then(r => r.json())
             .then(data => setPackages(Array.isArray(data) ? data : []))
             .catch(() => setPackages([]));
@@ -2406,7 +2407,7 @@ const ContractPreviewFromList: React.FC<{
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
     const [contractName, setContractName] = useState<string>('');
 
-    const SERVER_URL = 'http://localhost:3001';
+    const SERVER_URL = API_BASE_URL;
     const DEFAULT_TENANT = 'org_default';
 
     React.useEffect(() => {

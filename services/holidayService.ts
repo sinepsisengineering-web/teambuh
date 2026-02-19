@@ -89,11 +89,17 @@ const hasInternet = (): boolean => {
 };
 
 /**
- * Показать системное уведомление
+ * Показать системное уведомление (Web Notification API)
  */
 const showNotification = (title: string, body: string): void => {
-    if ((window as any).electronAPI) {
-        (window as any).electronAPI.showNotification(title, body);
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body });
+    } else if ('Notification' in window && Notification.permission !== 'denied') {
+        Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+                new Notification(title, { body });
+            }
+        });
     } else {
         console.warn('[HolidayService] Уведомление:', title, body);
     }

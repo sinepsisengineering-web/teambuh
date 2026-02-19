@@ -1,13 +1,57 @@
-// server/database/taskDatabase.js
+// server/database/taskDatabase.ts
 // Сервис работы с SQLite базой данных задач
 
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
+
+// Типы
+export interface StoredTask {
+    id: string;
+    title: string;
+    description: string | null;
+
+    // Поля из справочника правил (для отображения в модальном окне)
+    fullDescription: string | null;  // Полное описание из правила
+    legalBasis: string | null;       // Основание (ссылка на закон)
+    ruleId: string | null;           // ID правила (для связи со справочником)
+
+    // Тип задачи
+    taskSource: 'auto' | 'manual';
+    recurrence: 'oneTime' | 'cyclic';
+    cyclePattern: string | null;
+
+    // Клиент (сохраняем имя навсегда)
+    clientId: string;
+    clientName: string;
+
+    // Назначение
+    assignedToId: string | null;
+    assignedToName: string | null;
+
+    // Выполнение
+    completedById: string | null;
+    completedByName: string | null;
+
+    // Даты
+    originalDueDate: string;
+    currentDueDate: string;
+    rescheduledDates: string | null; // JSON массив
+
+    // Статус
+    status: 'pending' | 'inProgress' | 'completed' | 'archived';
+
+    // Метаданные
+    createdAt: string;
+    completedAt: string | null;
+    archivedAt: string | null;
+    deletedAt: string | null;
+    isDeleted: number; // 0 или 1
+}
 
 // Путь к базе данных
-const getDbPath = (tenantId = 'org_default') => {
-    const dbDir = path.join(process.cwd(), 'data', 'client_data', tenantId, 'db');
+const getDbPath = (tenantId: string = 'org_default'): string => {
+    const dbDir = path.join(process.cwd(), 'data', 'tenants', tenantId, 'db');
     if (!fs.existsSync(dbDir)) {
         fs.mkdirSync(dbDir, { recursive: true });
     }
@@ -15,7 +59,7 @@ const getDbPath = (tenantId = 'org_default') => {
 };
 
 // Инициализация базы данных
-const initDatabase = (tenantId = 'org_default') => {
+export const initDatabase = (tenantId: string = 'org_default'): Database.Database => {
     const dbPath = getDbPath(tenantId);
     const db = new Database(dbPath);
 
@@ -55,9 +99,7 @@ const initDatabase = (tenantId = 'org_default') => {
             completed_at TEXT,
             archived_at TEXT,
             deleted_at TEXT,
-            is_deleted INTEGER DEFAULT 0,
-            completion_lead_days INTEGER DEFAULT 3,
-            due_date_rule TEXT DEFAULT 'next_business_day'
+            is_deleted INTEGER DEFAULT 0
         );
         
         CREATE INDEX IF NOT EXISTS idx_tasks_client ON tasks(client_id);
@@ -80,67 +122,25 @@ const initDatabase = (tenantId = 'org_default') => {
         db.exec('ALTER TABLE tasks ADD COLUMN rule_id TEXT');
         console.log('[TaskDB] Added column: rule_id');
     } catch (e) { /* Колонка уже существует */ }
-    try {
-        db.exec('ALTER TABLE tasks ADD COLUMN completion_lead_days INTEGER DEFAULT 3');
-        console.log('[TaskDB] Added column: completion_lead_days');
-    } catch (e) { /* Колонка уже существует */ }
-    try {
-        db.exec("ALTER TABLE tasks ADD COLUMN due_date_rule TEXT DEFAULT 'next_business_day'");
-        console.log('[TaskDB] Added column: due_date_rule');
-    } catch (e) { /* Колонка уже существует */ }
-    try {
-        db.exec('ALTER TABLE tasks ADD COLUMN is_floating INTEGER DEFAULT 0');
-        console.log('[TaskDB] Added column: is_floating');
-    } catch (e) { /* Колонка уже существует */ }
 
     console.log('[TaskDB] Database initialized:', dbPath);
     return db;
 };
 
-// Мапинг строки БД в объект задачи
-const mapRowToTask = (row) => {
-    if (!row) return null;
-    return {
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        fullDescription: row.full_description,
-        legalBasis: row.legal_basis,
-        ruleId: row.rule_id,
-        taskSource: row.task_source,
-        recurrence: row.recurrence,
-        cyclePattern: row.cycle_pattern,
-        clientId: row.client_id,
-        clientName: row.client_name,
-        assignedToId: row.assigned_to_id,
-        assignedToName: row.assigned_to_name,
-        completedById: row.completed_by_id,
-        completedByName: row.completed_by_name,
-        originalDueDate: row.original_due_date,
-        currentDueDate: (row.is_floating === 1 && row.status !== 'completed')
-            ? new Date().toISOString().split('T')[0]
-            : row.current_due_date,
-        rescheduledDates: row.rescheduled_dates,
-        status: row.status,
-        createdAt: row.created_at,
-        completedAt: row.completed_at,
-        archivedAt: row.archived_at,
-        deletedAt: row.deleted_at,
-        isDeleted: row.is_deleted,
-        completionLeadDays: row.completion_lead_days ?? 3,
-        dueDateRule: row.due_date_rule || 'next_business_day',
-        isFloating: row.is_floating === 1
-    };
-};
-
 // Класс для работы с задачами
-class TaskDatabase {
-    constructor(tenantId = 'org_default') {
+export class TaskDatabase {
+    private db: Database.Database;
+
+    constructor(tenantId: string = 'org_default') {
         this.db = initDatabase(tenantId);
     }
 
+    // ==========================================
+    // CRUD операции
+    // ==========================================
+
     // Создать задачу
-    create(task) {
+    create(task: Omit<StoredTask, 'createdAt' | 'completedAt' | 'archivedAt' | 'deletedAt' | 'isDeleted'>): StoredTask {
         const stmt = this.db.prepare(`
             INSERT INTO tasks (
                 id, title, description,
@@ -150,7 +150,7 @@ class TaskDatabase {
                 assigned_to_id, assigned_to_name,
                 completed_by_id, completed_by_name,
                 original_due_date, current_due_date, rescheduled_dates,
-                status, completion_lead_days, due_date_rule
+                status
             ) VALUES (
                 @id, @title, @description,
                 @fullDescription, @legalBasis, @ruleId,
@@ -159,39 +159,37 @@ class TaskDatabase {
                 @assignedToId, @assignedToName,
                 @completedById, @completedByName,
                 @originalDueDate, @currentDueDate, @rescheduledDates,
-                @status, @completionLeadDays, @dueDateRule
+                @status
             )
         `);
 
         stmt.run({
             id: task.id,
             title: task.title,
-            description: task.description || null,
-            fullDescription: task.fullDescription || null,
-            legalBasis: task.legalBasis || null,
-            ruleId: task.ruleId || null,
-            taskSource: task.taskSource || 'auto',
-            recurrence: task.recurrence || 'cyclic',
-            cyclePattern: task.cyclePattern || null,
+            description: task.description,
+            fullDescription: task.fullDescription,
+            legalBasis: task.legalBasis,
+            ruleId: task.ruleId,
+            taskSource: task.taskSource,
+            recurrence: task.recurrence,
+            cyclePattern: task.cyclePattern,
             clientId: task.clientId,
             clientName: task.clientName,
-            assignedToId: task.assignedToId || null,
-            assignedToName: task.assignedToName || null,
-            completedById: task.completedById || null,
-            completedByName: task.completedByName || null,
+            assignedToId: task.assignedToId,
+            assignedToName: task.assignedToName,
+            completedById: task.completedById,
+            completedByName: task.completedByName,
             originalDueDate: task.originalDueDate,
             currentDueDate: task.currentDueDate,
-            rescheduledDates: task.rescheduledDates || null,
-            status: task.status || 'pending',
-            completionLeadDays: task.completionLeadDays ?? 3,
-            dueDateRule: task.dueDateRule || 'next_business_day'
+            rescheduledDates: task.rescheduledDates,
+            status: task.status
         });
 
-        return this.getById(task.id);
+        return this.getById(task.id)!;
     }
 
     // Создать много задач (транзакция)
-    createMany(tasks) {
+    createMany(tasks: Omit<StoredTask, 'createdAt' | 'completedAt' | 'archivedAt' | 'deletedAt' | 'isDeleted'>[]): number {
         const stmt = this.db.prepare(`
             INSERT OR REPLACE INTO tasks (
                 id, title, description,
@@ -201,7 +199,7 @@ class TaskDatabase {
                 assigned_to_id, assigned_to_name,
                 completed_by_id, completed_by_name,
                 original_due_date, current_due_date, rescheduled_dates,
-                status, completion_lead_days, due_date_rule
+                status
             ) VALUES (
                 @id, @title, @description,
                 @fullDescription, @legalBasis, @ruleId,
@@ -210,34 +208,32 @@ class TaskDatabase {
                 @assignedToId, @assignedToName,
                 @completedById, @completedByName,
                 @originalDueDate, @currentDueDate, @rescheduledDates,
-                @status, @completionLeadDays, @dueDateRule
+                @status
             )
         `);
 
-        const insertMany = this.db.transaction((tasks) => {
+        const insertMany = this.db.transaction((tasks: any[]) => {
             for (const task of tasks) {
                 stmt.run({
                     id: task.id,
                     title: task.title,
-                    description: task.description || null,
-                    fullDescription: task.fullDescription || null,
-                    legalBasis: task.legalBasis || null,
-                    ruleId: task.ruleId || null,
-                    taskSource: task.taskSource || 'auto',
-                    recurrence: task.recurrence || 'cyclic',
-                    cyclePattern: task.cyclePattern || null,
+                    description: task.description,
+                    fullDescription: task.fullDescription,
+                    legalBasis: task.legalBasis,
+                    ruleId: task.ruleId,
+                    taskSource: task.taskSource,
+                    recurrence: task.recurrence,
+                    cyclePattern: task.cyclePattern,
                     clientId: task.clientId,
                     clientName: task.clientName,
-                    assignedToId: task.assignedToId || null,
-                    assignedToName: task.assignedToName || null,
-                    completedById: task.completedById || null,
-                    completedByName: task.completedByName || null,
+                    assignedToId: task.assignedToId,
+                    assignedToName: task.assignedToName,
+                    completedById: task.completedById,
+                    completedByName: task.completedByName,
                     originalDueDate: task.originalDueDate,
                     currentDueDate: task.currentDueDate,
-                    rescheduledDates: task.rescheduledDates || null,
-                    status: task.status || 'pending',
-                    completionLeadDays: task.completionLeadDays ?? 3,
-                    dueDateRule: task.dueDateRule || 'next_business_day'
+                    rescheduledDates: task.rescheduledDates,
+                    status: task.status
                 });
             }
             return tasks.length;
@@ -247,59 +243,51 @@ class TaskDatabase {
     }
 
     // Получить по ID
-    getById(id) {
-        const row = this.db.prepare('SELECT * FROM tasks WHERE id = ? AND is_deleted = 0').get(id);
-        return mapRowToTask(row);
+    getById(id: string): StoredTask | null {
+        const row = this.db.prepare('SELECT * FROM tasks WHERE id = ? AND is_deleted = 0').get(id) as any;
+        return row ? this.mapRowToTask(row) : null;
     }
 
     // Получить все активные задачи
-    getAll() {
-        const rows = this.db.prepare('SELECT * FROM tasks WHERE is_deleted = 0 ORDER BY current_due_date').all();
-        return rows.map(mapRowToTask);
+    getAll(): StoredTask[] {
+        const rows = this.db.prepare('SELECT * FROM tasks WHERE is_deleted = 0 ORDER BY current_due_date').all() as any[];
+        return rows.map(this.mapRowToTask);
     }
 
     // Получить задачи по клиенту
-    getByClient(clientId) {
-        const rows = this.db.prepare('SELECT * FROM tasks WHERE client_id = ? AND is_deleted = 0 ORDER BY current_due_date').all(clientId);
-        return rows.map(mapRowToTask);
+    getByClient(clientId: string): StoredTask[] {
+        const rows = this.db.prepare('SELECT * FROM tasks WHERE client_id = ? AND is_deleted = 0 ORDER BY current_due_date').all(clientId) as any[];
+        return rows.map(this.mapRowToTask);
     }
 
     // Получить задачи по сотруднику
-    getByEmployee(employeeId) {
-        const rows = this.db.prepare('SELECT * FROM tasks WHERE assigned_to_id = ? AND is_deleted = 0 ORDER BY current_due_date').all(employeeId);
-        return rows.map(mapRowToTask);
+    getByEmployee(employeeId: string): StoredTask[] {
+        const rows = this.db.prepare('SELECT * FROM tasks WHERE assigned_to_id = ? AND is_deleted = 0 ORDER BY current_due_date').all(employeeId) as any[];
+        return rows.map(this.mapRowToTask);
     }
 
     // Получить задачи по дате
-    getByDateRange(startDate, endDate) {
+    getByDateRange(startDate: string, endDate: string): StoredTask[] {
         const rows = this.db.prepare(`
             SELECT * FROM tasks 
             WHERE current_due_date >= ? AND current_due_date <= ? 
             AND is_deleted = 0 
             ORDER BY current_due_date
-        `).all(startDate, endDate);
-        return rows.map(mapRowToTask);
+        `).all(startDate, endDate) as any[];
+        return rows.map(this.mapRowToTask);
     }
 
     // Получить задачи по статусу
-    getByStatus(status) {
-        const rows = this.db.prepare('SELECT * FROM tasks WHERE status = ? AND is_deleted = 0 ORDER BY current_due_date').all(status);
-        return rows.map(mapRowToTask);
+    getByStatus(status: StoredTask['status']): StoredTask[] {
+        const rows = this.db.prepare('SELECT * FROM tasks WHERE status = ? AND is_deleted = 0 ORDER BY current_due_date').all(status) as any[];
+        return rows.map(this.mapRowToTask);
     }
 
     // Обновить задачу
-    update(id, updates) {
-        const fields = [];
-        const values = { id };
+    update(id: string, updates: Partial<StoredTask>): StoredTask | null {
+        const fields: string[] = [];
+        const values: any = { id };
 
-        if (updates.title !== undefined) {
-            fields.push('title = @title');
-            values.title = updates.title;
-        }
-        if (updates.description !== undefined) {
-            fields.push('description = @description');
-            values.description = updates.description;
-        }
         if (updates.status !== undefined) {
             fields.push('status = @status');
             values.status = updates.status;
@@ -332,26 +320,6 @@ class TaskDatabase {
             fields.push('rescheduled_dates = @rescheduledDates');
             values.rescheduledDates = updates.rescheduledDates;
         }
-        if (updates.completionLeadDays !== undefined) {
-            fields.push('completion_lead_days = @completionLeadDays');
-            values.completionLeadDays = updates.completionLeadDays;
-        }
-        if (updates.dueDateRule !== undefined) {
-            fields.push('due_date_rule = @dueDateRule');
-            values.dueDateRule = updates.dueDateRule;
-        }
-        if (updates.recurrence !== undefined) {
-            fields.push('recurrence = @recurrence');
-            values.recurrence = updates.recurrence;
-        }
-        if (updates.cyclePattern !== undefined) {
-            fields.push('cycle_pattern = @cyclePattern');
-            values.cyclePattern = updates.cyclePattern;
-        }
-        if (updates.isFloating !== undefined) {
-            fields.push('is_floating = @isFloating');
-            values.isFloating = updates.isFloating ? 1 : 0;
-        }
 
         if (fields.length === 0) return this.getById(id);
 
@@ -362,7 +330,7 @@ class TaskDatabase {
     }
 
     // Выполнить задачу
-    complete(id, completedById, completedByName) {
+    complete(id: string, completedById: string, completedByName: string): StoredTask | null {
         const now = new Date().toISOString();
         this.db.prepare(`
             UPDATE tasks 
@@ -377,14 +345,14 @@ class TaskDatabase {
     }
 
     // Мягкое удаление
-    softDelete(id) {
+    softDelete(id: string): boolean {
         const now = new Date().toISOString();
         const result = this.db.prepare('UPDATE tasks SET is_deleted = 1, deleted_at = ? WHERE id = ?').run(now, id);
         return result.changes > 0;
     }
 
     // Переместить в архив
-    archive(id) {
+    archive(id: string): boolean {
         const now = new Date().toISOString();
         const result = this.db.prepare(`
             UPDATE tasks 
@@ -395,13 +363,13 @@ class TaskDatabase {
     }
 
     // Получить удалённые (для архива)
-    getDeleted() {
-        const rows = this.db.prepare('SELECT * FROM tasks WHERE is_deleted = 1 ORDER BY deleted_at DESC').all();
-        return rows.map(mapRowToTask);
+    getDeleted(): StoredTask[] {
+        const rows = this.db.prepare('SELECT * FROM tasks WHERE is_deleted = 1 ORDER BY deleted_at DESC').all() as any[];
+        return rows.map(this.mapRowToTask);
     }
 
     // Статистика
-    getStats() {
+    getStats(): { total: number; pending: number; completed: number; archived: number } {
         const row = this.db.prepare(`
             SELECT 
                 COUNT(*) as total,
@@ -409,7 +377,7 @@ class TaskDatabase {
                 SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
                 SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) as archived
             FROM tasks WHERE is_deleted = 0
-        `).get();
+        `).get() as any;
 
         return {
             total: row.total || 0,
@@ -419,39 +387,53 @@ class TaskDatabase {
         };
     }
 
-    // Удалить автоматические невыполненные задачи клиента после указанной даты
-    // Используется при пересчёте задач после изменения профиля клиента
-    deleteAutoTasksAfterDate(clientId, afterDate) {
-        const result = this.db.prepare(`
-            DELETE FROM tasks 
-            WHERE client_id = ? 
-            AND task_source = 'auto' 
-            AND status != 'completed' 
-            AND current_due_date >= ?
-            AND is_deleted = 0
-        `).run(clientId, afterDate);
-        console.log(`[TaskDB] Deleted ${result.changes} auto-tasks for client ${clientId} after ${afterDate}`);
-        return result.changes;
+    // Закрыть соединение
+    close(): void {
+        this.db.close();
     }
 
-    // Закрыть соединение
-    close() {
-        this.db.close();
+    // ==========================================
+    // Вспомогательные методы
+    // ==========================================
+
+    private mapRowToTask(row: any): StoredTask {
+        return {
+            id: row.id,
+            title: row.title,
+            description: row.description,
+            fullDescription: row.full_description,
+            legalBasis: row.legal_basis,
+            ruleId: row.rule_id,
+            taskSource: row.task_source,
+            recurrence: row.recurrence,
+            cyclePattern: row.cycle_pattern,
+            clientId: row.client_id,
+            clientName: row.client_name,
+            assignedToId: row.assigned_to_id,
+            assignedToName: row.assigned_to_name,
+            completedById: row.completed_by_id,
+            completedByName: row.completed_by_name,
+            originalDueDate: row.original_due_date,
+            currentDueDate: row.current_due_date,
+            rescheduledDates: row.rescheduled_dates,
+            status: row.status,
+            createdAt: row.created_at,
+            completedAt: row.completed_at,
+            archivedAt: row.archived_at,
+            deletedAt: row.deleted_at,
+            isDeleted: row.is_deleted
+        };
     }
 }
 
-// Singleton instance
-let instance = null;
+// Экспорт singleton instance
+let instance: TaskDatabase | null = null;
 
-const getTaskDatabase = (tenantId = 'org_default') => {
+export const getTaskDatabase = (tenantId: string = 'org_default'): TaskDatabase => {
     if (!instance) {
         instance = new TaskDatabase(tenantId);
     }
     return instance;
 };
 
-module.exports = {
-    TaskDatabase,
-    getTaskDatabase,
-    initDatabase
-};
+export default TaskDatabase;

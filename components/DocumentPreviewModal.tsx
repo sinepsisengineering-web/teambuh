@@ -3,7 +3,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 
-const SERVER_URL = 'http://localhost:3001';
+import { API_BASE_URL } from '../apiConfig';
+const SERVER_URL = API_BASE_URL;
 const DEFAULT_TENANT = 'org_default';
 
 interface DocumentPreviewModalProps {

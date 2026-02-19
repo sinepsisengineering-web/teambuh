@@ -30,9 +30,9 @@ dist-ssr
 # Development docs (not for release)
 .agent/
 
-# Server (local development only)
-server/
-
-# Local database files
-data/
+# Local database files — клиентские данные НЕ в Git
+data/client_data/
 *.leveldb/
+
+# Docker data (per-instance)
+db_data/

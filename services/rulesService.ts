@@ -5,9 +5,10 @@
 import { TaskRule, RuleCategory, TaskType, DateCalculationConfig, RepeatFrequency, TaskDueDateRule, LegalEntity } from '../types';
 // Импорт справочника типов для нормализации ID
 import { normalizeLegalForm, normalizeTaxSystem } from '../constants/dictionaries';
+import { API_BASE_URL } from '../apiConfig';
 
 // API конфигурация
-const SERVER_URL = 'http://localhost:3001';
+const SERVER_URL = API_BASE_URL;
 const TENANT_ID = 'org_default';
 
 // ==========================================

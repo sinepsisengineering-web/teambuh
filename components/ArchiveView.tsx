@@ -30,7 +30,8 @@ interface ArchiveViewProps {
 // API ФУНКЦИИ
 // ============================================
 
-const API_BASE = 'http://localhost:3001/api';
+import { API_BASE_URL } from '../apiConfig';
+const API_BASE = `${API_BASE_URL}/api`;
 
 const fetchArchive = async (tenantId: string, type: ArchiveType): Promise<ArchivedItem[]> => {
   const response = await fetch(`${API_BASE}/${tenantId}/archive/${type}`);

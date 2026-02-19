@@ -3,9 +3,10 @@
 // TODO: При переходе на production — обновить SERVER_URL
 
 import { LegalEntity, Employee, UploadedDocument } from '../types';
+import { API_BASE_URL } from '../apiConfig';
 
 // Конфигурация сервера
-const SERVER_URL = 'http://localhost:3001';
+const SERVER_URL = API_BASE_URL;
 const DEFAULT_TENANT = 'org_default';
 
 // =============================================
