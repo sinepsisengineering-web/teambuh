@@ -98,31 +98,29 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Email и пароль обязательны' });
         }
 
-        // Ищем сотрудника по email в default tenant
-        const tenantPath = getTenantPath(DEFAULT_TENANT);
-        const employee = auth.findEmployeeByEmail(tenantPath, email);
+        const authDb = auth.getAuthDb(DEFAULT_TENANT);
+        const dbUser = authDb.findByEmail(email);
 
-        if (!employee) {
+        if (!dbUser) {
             return res.status(401).json({ success: false, error: 'Неверный email или пароль' });
         }
 
-        // Проверяем пароль
-        if (!employee.passwordHash) {
+        if (!dbUser.passwordHash) {
             return res.status(401).json({ success: false, error: 'Аккаунт не активирован. Обратитесь к администратору.' });
         }
 
-        const isValid = await auth.comparePassword(password, employee.passwordHash);
+        const isValid = await auth.comparePassword(password, dbUser.passwordHash);
         if (!isValid) {
             return res.status(401).json({ success: false, error: 'Неверный email или пароль' });
         }
 
-        // Генерируем токен
         const user = {
-            id: employee.id,
-            email: employee.email,
-            name: employee.name || employee.lastName || 'Пользователь',
-            role: employee.role || 'accountant',
+            id: dbUser.id,
+            email: dbUser.email,
+            name: dbUser.name,
+            role: dbUser.role || 'junior',
             tenantId: DEFAULT_TENANT,
+            mustChangePassword: dbUser.mustChangePassword || false,
         };
 
         const token = auth.generateToken(user);
@@ -145,7 +143,7 @@ app.get('/api/auth/me', auth.authMiddleware, (req, res) => {
 app.post('/api/auth/change-password', auth.authMiddleware, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
-        const tenantPath = getTenantPath(req.user.tenantId || DEFAULT_TENANT);
+        const tenantId = req.user.tenantId || DEFAULT_TENANT;
 
         if (!currentPassword || !newPassword) {
             return res.status(400).json({ success: false, error: 'Укажите текущий и новый пароль' });
@@ -155,24 +153,228 @@ app.post('/api/auth/change-password', auth.authMiddleware, async (req, res) => {
             return res.status(400).json({ success: false, error: 'Новый пароль должен быть не менее 6 символов' });
         }
 
-        const employee = auth.findEmployeeById(tenantPath, req.user.id);
-        if (!employee || !employee.passwordHash) {
+        const authDb = auth.getAuthDb(tenantId);
+        const dbUser = authDb.findById(req.user.id);
+        if (!dbUser || !dbUser.passwordHash) {
             return res.status(404).json({ success: false, error: 'Пользователь не найден' });
         }
 
-        const isValid = await auth.comparePassword(currentPassword, employee.passwordHash);
+        const isValid = await auth.comparePassword(currentPassword, dbUser.passwordHash);
         if (!isValid) {
             return res.status(401).json({ success: false, error: 'Неверный текущий пароль' });
         }
 
         const newHash = await auth.hashPassword(newPassword);
-        auth.updateEmployeeProfile(tenantPath, req.user.id, { passwordHash: newHash });
+        authDb.updateUser(req.user.id, { passwordHash: newHash, mustChangePassword: false });
 
         console.log(`[Auth] Password changed: ${req.user.email}`);
         res.json({ success: true });
     } catch (error) {
         console.error('[Auth] Change password error:', error);
         res.status(500).json({ success: false, error: 'Ошибка смены пароля' });
+    }
+});
+
+// POST /api/auth/invite — создать приглашение (admin+)
+app.post('/api/auth/invite', auth.authMiddleware, auth.requireRole('admin'), async (req, res) => {
+    try {
+        const { email, name, role } = req.body;
+
+        if (!email || !name || !role) {
+            return res.status(400).json({ success: false, error: 'Заполните email, имя и роль' });
+        }
+
+        // Проверяем что пользователь может назначить эту роль
+        const allowedRoles = {
+            'super-admin': ['admin'],
+            'admin': ['senior', 'junior'],
+        };
+        const canAssign = allowedRoles[req.user.role] || [];
+        if (!canAssign.includes(role)) {
+            return res.status(403).json({ success: false, error: `Вы не можете назначить роль "${role}"` });
+        }
+
+        const tenantId = req.user.tenantId || DEFAULT_TENANT;
+        const authDb = auth.getAuthDb(tenantId);
+
+        // Проверяем что email ещё не занят
+        const existing = authDb.findByEmail(email);
+        if (existing) {
+            return res.status(400).json({ success: false, error: 'Сотрудник с таким email уже существует' });
+        }
+
+        const invitation = authDb.createInvitation({
+            email,
+            name,
+            role,
+            createdBy: req.user.email,
+        });
+
+        // Формируем ссылку для приглашения
+        const baseUrl = req.headers.origin || `http://localhost:5173`;
+        const inviteLink = `${baseUrl}/?invite=${invitation.token}`;
+
+        console.log('');
+        console.log('========================================');
+        console.log('  📧 ССЫЛКА ДЛЯ ПРИГЛАШЕНИЯ:');
+        console.log(`  ${inviteLink}`);
+        console.log('========================================');
+        console.log('');
+
+        res.json({
+            success: true,
+            invitation: {
+                token: invitation.token,
+                email: invitation.email,
+                name: invitation.name,
+                role: invitation.role,
+                expiresAt: invitation.expiresAt,
+            },
+            inviteLink,
+        });
+    } catch (error) {
+        console.error('[Auth] Invite error:', error);
+        res.status(500).json({ success: false, error: 'Ошибка создания приглашения' });
+    }
+});
+
+// GET /api/auth/invite/:token — проверить приглашение (открытый)
+app.get('/api/auth/invite/:token', (req, res) => {
+    const authDb = auth.getAuthDb(DEFAULT_TENANT);
+    const invitation = authDb.getInvitation(req.params.token);
+
+    if (!invitation) {
+        return res.status(404).json({ success: false, error: 'Приглашение не найдено' });
+    }
+
+    if (invitation.status === 'expired') {
+        return res.status(410).json({ success: false, error: 'Приглашение истекло' });
+    }
+
+    if (invitation.status === 'accepted') {
+        return res.status(410).json({ success: false, error: 'Приглашение уже использовано' });
+    }
+
+    res.json({
+        success: true,
+        invitation: {
+            name: invitation.name,
+            email: invitation.email,
+            role: invitation.role,
+            expiresAt: invitation.expiresAt,
+        },
+    });
+});
+
+// POST /api/auth/register — регистрация по приглашению (открытый)
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { token, password } = req.body;
+
+        if (!token || !password) {
+            return res.status(400).json({ success: false, error: 'Токен и пароль обязательны' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ success: false, error: 'Пароль должен быть не менее 6 символов' });
+        }
+
+        const authDb = auth.getAuthDb(DEFAULT_TENANT);
+        const invitation = authDb.getInvitation(token);
+
+        if (!invitation || invitation.status !== 'pending') {
+            return res.status(400).json({ success: false, error: 'Недействительное или истёкшее приглашение' });
+        }
+
+        // Создаём пользователя
+        const crypto = require('crypto');
+        const userId = `emp-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+        const passwordHash = await auth.hashPassword(password);
+
+        authDb.createUser({
+            id: userId,
+            email: invitation.email,
+            name: invitation.name,
+            role: invitation.role,
+            passwordHash,
+            invitedBy: invitation.createdBy,
+        });
+
+        // Помечаем приглашение как принятое
+        authDb.acceptInvitation(token, userId);
+
+        // Автоматический вход
+        const user = {
+            id: userId,
+            email: invitation.email,
+            name: invitation.name,
+            role: invitation.role,
+            tenantId: DEFAULT_TENANT,
+        };
+
+        const authToken = auth.generateToken(user);
+
+        console.log(`[Auth] New user registered: ${user.email} (${user.role})`);
+
+        res.json({ success: true, token: authToken, user });
+    } catch (error) {
+        console.error('[Auth] Register error:', error);
+        res.status(500).json({ success: false, error: 'Ошибка регистрации' });
+    }
+});
+
+// POST /api/auth/register-admin — самостоятельная регистрация директора (открытый)
+// Используется при первом входе директора по ссылке /register?email=xxx
+app.post('/api/auth/register-admin', async (req, res) => {
+    try {
+        const { email, name, password } = req.body;
+
+        if (!email || !name || !password) {
+            return res.status(400).json({ success: false, error: 'Заполните все поля' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ success: false, error: 'Пароль должен быть не менее 6 символов' });
+        }
+
+        const authDb = auth.getAuthDb(DEFAULT_TENANT);
+
+        // Проверяем что email ещё не занят
+        const existing = authDb.findByEmail(email);
+        if (existing) {
+            return res.status(400).json({ success: false, error: 'Пользователь с таким email уже зарегистрирован' });
+        }
+
+        // Создаём директора (admin)
+        const crypto = require('crypto');
+        const userId = `emp-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+        const passwordHash = await auth.hashPassword(password);
+
+        authDb.createUser({
+            id: userId,
+            email,
+            name,
+            role: 'admin',
+            passwordHash,
+        });
+
+        // Автоматический вход
+        const user = {
+            id: userId,
+            email,
+            name,
+            role: 'admin',
+            tenantId: DEFAULT_TENANT,
+        };
+
+        const token = auth.generateToken(user);
+
+        console.log(`[Auth] New admin registered: ${user.email}`);
+
+        res.json({ success: true, token, user });
+    } catch (error) {
+        console.error('[Auth] Register admin error:', error);
+        res.status(500).json({ success: false, error: 'Ошибка регистрации' });
     }
 });
 

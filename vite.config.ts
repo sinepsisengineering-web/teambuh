@@ -8,5 +8,11 @@ export default defineConfig({
   base: '/',
   server: {
     port: 5173, // Указываем порт для dev-сервера
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+    },
   },
 })

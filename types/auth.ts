@@ -1,7 +1,23 @@
 // types/auth.ts
 // Типы для системы авторизации
 
-export type UserRole = 'super-admin' | 'admin' | 'accountant';
+export type UserRole = 'super-admin' | 'admin' | 'senior' | 'junior';
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+    'super-admin': 'Рут (Владелец)',
+    'admin': 'Директор',
+    'senior': 'Старший бухгалтер',
+    'junior': 'Бухгалтер',
+};
+
+// Какие роли может назначать каждый уровень
+export function getAssignableRoles(myRole: UserRole): UserRole[] {
+    switch (myRole) {
+        case 'super-admin': return ['admin'];
+        case 'admin': return ['senior', 'junior'];
+        default: return [];
+    }
+}
 
 export interface User {
     id: string;
@@ -30,4 +46,16 @@ export interface AuthResponse {
     user?: User;
     token?: string;
     error?: string;
+}
+
+// Приглашение
+export interface Invitation {
+    token: string;
+    email: string;
+    name: string;
+    role: UserRole;
+    createdBy: string;
+    createdAt: string;
+    expiresAt: string;
+    status: 'pending' | 'accepted' | 'expired';
 }

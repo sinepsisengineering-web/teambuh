@@ -13,6 +13,9 @@ import { useTaskModal } from '../contexts/TaskModalContext';
 import { getStatusIcon, getPriorityBarColor } from '../services/taskIndicators';
 
 import { API_BASE_URL } from '../apiConfig';
+import { useAuth } from '../contexts/AuthContext';
+import { InviteModal } from './InviteModal';
+import { ROLE_LABELS } from '../types/auth';
 const SERVER_URL = API_BASE_URL;
 
 type StaffTab = 'list' | 'details' | 'manage';
@@ -72,7 +75,7 @@ const StaffListTab: React.FC<{ employees: Employee[], legalEntities: LegalEntity
                             />
                             <div>
                                 <div className="font-semibold text-slate-800">{emp.lastName || 'Без фамилии'} {emp.firstName || ''}</div>
-                                <div className="text-sm text-slate-500">{emp.role === 'accountant' ? 'Бухгалтер' : emp.role === 'admin' ? 'Администратор' : 'Помощник'}</div>
+                                <div className="text-sm text-slate-500">{ROLE_LABELS[emp.role as keyof typeof ROLE_LABELS] || emp.role || 'Сотрудник'}</div>
                             </div>
                         </div>
 
@@ -461,6 +464,9 @@ const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDe
     const [selectedEmployee, setSelectedEmployee] = useState<string | null>(employees.length > 0 ? employees[0].id : null);
     const [isAddingNew, setIsAddingNew] = useState(false);
     const [newEmploymentType, setNewEmploymentType] = useState<EmploymentType>('staff');
+    const [showInviteModal, setShowInviteModal] = useState(false);
+    const { user } = useAuth();
+    const canInvite = user && (user.role === 'super-admin' || user.role === 'admin');
 
     // Получаем данные выбранного сотрудника
     const currentEmployee = employees.find(e => e.id === selectedEmployee) || (employees.length > 0 ? employees[0] : undefined);
@@ -928,6 +934,13 @@ const StaffManageTab: React.FC<StaffManageTabProps> = ({ employees, onSave, onDe
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
                         {isAddingNew ? 'Создание...' : 'Добавить'}
                     </button>
+                    {canInvite && (
+                        <button onClick={() => setShowInviteModal(true)} className="w-full mb-2 px-2 py-1.5 text-[10px] rounded-lg flex items-center justify-center gap-1 bg-green-600 text-white hover:bg-green-700 transition-colors">
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                            Пригласить по ссылке
+                        </button>
+                    )}
+                    {showInviteModal && <InviteModal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)} />}
                     <div className="bg-white rounded-lg border border-slate-200 flex-1 overflow-y-auto">
                         {employees.map(emp => (
                             <div key={emp.id} onClick={() => handleSelectEmployee(emp.id)}
@@ -1110,7 +1123,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ employees = [], legalEntit
     return (
         <div className="h-full flex flex-col -m-8">
             {/* Верхняя панель с вкладками */}
-            <div className="bg-[linear-gradient(135deg,#1E1E3F_0%,#312e81_50%,#1E1E3F_100%)] px-6 py-3">
+            <div className="bg-[linear-gradient(135deg,#1E1E3F_0%,#312e81_50%,#1E1E3F_100%)] px-6 py-3 flex items-center justify-between">
                 <nav className="flex gap-1">
                     {tabs.map((tab) => (
                         <button
@@ -1128,6 +1141,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ employees = [], legalEntit
                         </button>
                     ))}
                 </nav>
+
             </div>
 
             {/* Контент */}
@@ -1136,6 +1150,7 @@ export const StaffView: React.FC<StaffViewProps> = ({ employees = [], legalEntit
                 {activeTab === 'details' && <StaffDetailsTab employees={employees} employeeId={selectedEmployeeId} legalEntities={legalEntities} />}
                 {activeTab === 'manage' && <StaffManageTab employees={employees} onSave={onSave} onDelete={onDelete} onDataChanged={onDataChanged} confirm={confirm} />}
             </div>
+
         </div>
     );
 };

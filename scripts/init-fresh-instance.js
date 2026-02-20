@@ -58,43 +58,34 @@ if (!fs.existsSync(metaPath)) {
 console.log('');
 
 // ============================================
-// 2. СОЗДАНИЕ СУПЕР-АДМИНА
+// 2. СОЗДАНИЕ СУПЕР-АДМИНА (в auth.db)
 // ============================================
 
+const { AuthDatabase } = require('../server/database/authDatabase');
+const authDb = new AuthDatabase(tenantId);
+
 const adminId = 'emp-admin';
-const adminDir = path.join(CLIENT_DATA_DIR, 'employees', adminId);
+const existingAdmin = authDb.findById(adminId);
 
-if (!fs.existsSync(adminDir)) {
-    fs.mkdirSync(adminDir, { recursive: true });
-
-    // Хэшируем пароль через bcrypt (синхронно для скрипта)
+if (!existingAdmin) {
     const defaultPassword = 'admin123';
     const passwordHash = bcrypt.hashSync(defaultPassword, 10);
 
-    const adminProfile = {
+    authDb.createUser({
         id: adminId,
-        name: 'Администратор',
-        lastName: 'Администратор',
-        role: 'super-admin',
         email: 'admin@teambuh.local',
-        phone: '',
-        position: 'Супер-Администратор',
-        passwordHash: passwordHash,
-        isActive: true,
-        createdAt: new Date().toISOString()
-    };
+        name: 'Администратор',
+        role: 'super-admin',
+        passwordHash,
+        mustChangePassword: true,
+    });
 
-    fs.writeFileSync(
-        path.join(adminDir, 'profile.json'),
-        JSON.stringify(adminProfile, null, 2)
-    );
-
-    console.log('  👤 Создан Супер-Админ:');
+    console.log('  👤 Создан Супер-Админ (auth.db):');
     console.log('     Email:  admin@teambuh.local');
     console.log('     Пароль: admin123');
     console.log('     ⚠️  Смените пароль после первого входа!');
 } else {
-    console.log('  ✅ Супер-Админ уже существует');
+    console.log('  ✅ Супер-Админ уже существует в auth.db');
 }
 
 console.log('');

@@ -29,6 +29,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Копируем серверный код
 COPY server/ ./server/
 
+# Копируем скрипты инициализации
+COPY scripts/ ./scripts/
+
 # Копируем собранный фронт из builder
 COPY --from=builder /app/dist ./dist/
 

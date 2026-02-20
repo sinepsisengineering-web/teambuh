@@ -2,11 +2,13 @@
 // Модуль авторизации: хэширование паролей, JWT, middleware
 //
 // Используется bcryptjs для паролей и jsonwebtoken для токенов
+// Данные хранятся в auth.db через AuthDatabase
 
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
+const { AuthDatabase } = require('./database/authDatabase');
 
 // ============================================
 // КОНФИГУРАЦИЯ
@@ -36,6 +38,23 @@ const getJwtSecret = () => {
 };
 
 const JWT_SECRET = getJwtSecret();
+
+// ============================================
+// КЭШ ИНСТАНСОВ AuthDatabase
+// ============================================
+
+const authDbCache = {};
+
+/**
+ * Получить инстанс AuthDatabase для тенанта
+ * Кэшируется для повторного использования
+ */
+const getAuthDb = (tenantId = 'org_default') => {
+    if (!authDbCache[tenantId]) {
+        authDbCache[tenantId] = new AuthDatabase(tenantId);
+    }
+    return authDbCache[tenantId];
+};
 
 // ============================================
 // ПАРОЛИ (bcrypt)
@@ -96,79 +115,6 @@ const verifyToken = (token) => {
 };
 
 // ============================================
-// ПОИСК СОТРУДНИКА ПО EMAIL
-// ============================================
-
-/**
- * Найти сотрудника по email среди всех employees тенанта
- */
-const findEmployeeByEmail = (tenantPath, email) => {
-    const employeesDir = path.join(tenantPath, 'employees');
-
-    if (!fs.existsSync(employeesDir)) {
-        return null;
-    }
-
-    const dirs = fs.readdirSync(employeesDir).filter(name => {
-        const fullPath = path.join(employeesDir, name);
-        return fs.statSync(fullPath).isDirectory();
-    });
-
-    for (const dir of dirs) {
-        const profilePath = path.join(employeesDir, dir, 'profile.json');
-        if (fs.existsSync(profilePath)) {
-            try {
-                const profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
-                if (profile.email && profile.email.toLowerCase() === email.toLowerCase()) {
-                    return profile;
-                }
-            } catch (e) {
-                console.error(`[Auth] Error reading profile: ${profilePath}`, e.message);
-            }
-        }
-    }
-
-    return null;
-};
-
-/**
- * Найти сотрудника по ID
- */
-const findEmployeeById = (tenantPath, employeeId) => {
-    const profilePath = path.join(tenantPath, 'employees', employeeId, 'profile.json');
-
-    if (!fs.existsSync(profilePath)) {
-        return null;
-    }
-
-    try {
-        return JSON.parse(fs.readFileSync(profilePath, 'utf8'));
-    } catch (e) {
-        return null;
-    }
-};
-
-/**
- * Обновить profile.json сотрудника
- */
-const updateEmployeeProfile = (tenantPath, employeeId, updates) => {
-    const profilePath = path.join(tenantPath, 'employees', employeeId, 'profile.json');
-
-    if (!fs.existsSync(profilePath)) {
-        return false;
-    }
-
-    try {
-        const profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
-        const updated = { ...profile, ...updates };
-        fs.writeFileSync(profilePath, JSON.stringify(updated, null, 2));
-        return true;
-    } catch (e) {
-        return false;
-    }
-};
-
-// ============================================
 // EXPRESS MIDDLEWARE
 // ============================================
 
@@ -196,18 +142,52 @@ const authMiddleware = (req, res, next) => {
 };
 
 // ============================================
+// ПРОВЕРКА РОЛЕЙ
+// ============================================
+
+const ROLE_LEVEL = {
+    'junior': 1,
+    'senior': 2,
+    'admin': 3,
+    'super-admin': 4,
+};
+
+/**
+ * Проверить что роль пользователя >= минимальной
+ */
+const hasMinRole = (userRole, minRole) => {
+    return (ROLE_LEVEL[userRole] || 0) >= (ROLE_LEVEL[minRole] || 0);
+};
+
+/**
+ * Middleware: проверка минимальной роли
+ */
+const requireRole = (minRole) => (req, res, next) => {
+    if (!req.user || !hasMinRole(req.user.role, minRole)) {
+        return res.status(403).json({ error: 'Недостаточно прав' });
+    }
+    next();
+};
+
+// ============================================
 // ЭКСПОРТ
 // ============================================
 
 module.exports = {
+    // Пароли
     hashPassword,
     hashPasswordSync,
     comparePassword,
+    // JWT
     generateToken,
     verifyToken,
-    findEmployeeByEmail,
-    findEmployeeById,
-    updateEmployeeProfile,
-    authMiddleware,
     JWT_SECRET,
+    // Middleware
+    authMiddleware,
+    requireRole,
+    // Роли
+    hasMinRole,
+    ROLE_LEVEL,
+    // AuthDatabase
+    getAuthDb,
 };
