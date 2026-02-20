@@ -36,3 +36,26 @@ data/client_data/
 
 # Docker data (per-instance)
 db_data/
+
+# SaaS: тенанты (полные копии на сервере, не в Git)
+tenants/
+
+# SaaS: бэкапы
+backups/
+
+# SaaS: SSL сертификаты (Let's Encrypt)
+master/letsencrypt/
+
+# SaaS: реестр тенантов (на сервере)
+master/tenants.db
+
+# SaaS: template build artifacts (генерируются prepare-template.sh)
+template/dist/
+template/server/
+template/scripts/
+template/data/
+template/node_modules/
+template/Dockerfile
+template/.dockerignore
+template/package.json
+template/package-lock.json

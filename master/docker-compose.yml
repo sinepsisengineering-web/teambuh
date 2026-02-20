@@ -1,0 +1,78 @@
+# ==========================================
+# Master — Центральный роутер TeamBuh
+# Traefik (reverse proxy) + Master API
+# ==========================================
+#
+# Запуск:
+#   cd master && docker compose up -d
+#
+# Traefik автоматически следит за:
+#   - Docker labels (контейнеры тенантов)
+#   - ./traefik/dynamic/*.yml (конфиги роутов)
+
+services:
+  # ==========================================
+  # TRAEFIK — Reverse Proxy + SSL
+  # ==========================================
+  traefik:
+    image: traefik:v3.0
+    command:
+      # Провайдеры
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=teambuh-network"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+      # Точки входа
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Редирект HTTP → HTTPS
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      # Let's Encrypt
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:-admin@teambuh.ru}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+      # Dashboard (опционально)
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - ./letsencrypt:/letsencrypt
+    networks:
+      - teambuh-network
+    restart: unless-stopped
+
+  # ==========================================
+  # MASTER API — Управление тенантами
+  # ==========================================
+  master-api:
+    build: .
+    container_name: teambuh-master
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.master.rule=Host(`${DOMAIN:-teambuh.ru}`)"
+      - "traefik.http.routers.master.entrypoints=websecure"
+      - "traefik.http.routers.master.tls.certresolver=le"
+      - "traefik.http.services.master.loadbalancer.server.port=3000"
+    volumes:
+      - ../tenants:/srv/tenants
+      - ../template:/srv/template
+      - ../scripts:/srv/scripts
+      - ./tenants.db:/app/tenants.db
+    environment:
+      - NODE_ENV=production
+      - DOMAIN=${DOMAIN:-teambuh.ru}
+      - PORT=3000
+    networks:
+      - teambuh-network
+    restart: unless-stopped
+
+networks:
+  teambuh-network:
+    name: teambuh-network
+    driver: bridge

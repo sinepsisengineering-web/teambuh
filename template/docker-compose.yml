@@ -1,0 +1,29 @@
+# ==========================================
+# Template docker-compose для тенантов TeamBuh
+# Этот файл клонируется в каждый tenants/<id>/
+# ==========================================
+#
+# Все переменные читаются из .env (генерируется create-tenant.sh)
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: teambuh-${INSTANCE_NAME}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT}:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - JWT_SECRET=${JWT_SECRET}
+    volumes:
+      # Данные клиента — персистентны, не удаляются при обновлении
+      - ./data:/app/data
+    networks:
+      - teambuh-network
+
+networks:
+  teambuh-network:
+    external: true
