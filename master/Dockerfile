@@ -6,7 +6,7 @@ WORKDIR /app
 RUN apk add --no-cache bash rsync openssl
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm install --omit=dev && npm cache clean --force
 
 COPY server.js ./
 COPY public/ ./public/
