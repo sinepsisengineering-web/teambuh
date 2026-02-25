@@ -9,6 +9,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY server.js ./
+COPY public/ ./public/
 
 ENV NODE_ENV=production
 ENV PORT=3000

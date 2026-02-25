@@ -21,6 +21,9 @@ const DOMAIN = process.env.DOMAIN || 'teambuh.ru';
 
 app.use(express.json());
 
+// Лендинг + форма регистрации
+app.use(express.static(path.join(__dirname, 'public')));
+
 // ============================================
 // БАЗА ДАННЫХ ТЕНАНТОВ
 // ============================================

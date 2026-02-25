@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeamBuh — Регистрация фирмы</title>
+    <meta name="description"
+        content="Зарегистрируйте свою бухгалтерскую фирму в TeamBuh — мультипользовательской CRM для бухгалтерских команд">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: linear-gradient(135deg, #0f172a 0%, #312e81 50%, #0f172a 100%);
+            color: #fff;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 440px;
+        }
+
+        /* ===== HEADER ===== */
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 64px;
+            height: 64px;
+            background: #6366f1;
+            border-radius: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 0 24px rgba(99, 102, 241, 0.4);
+        }
+
+        .logo svg {
+            width: 32px;
+            height: 32px;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        /* ===== CARD ===== */
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        /* ===== STEPS ===== */
+        .steps {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .step {
+            flex: 1;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.15);
+            transition: background 0.3s;
+        }
+
+        .step.active {
+            background: #6366f1;
+        }
+
+        .step.done {
+            background: #22c55e;
+        }
+
+        /* ===== FORM ===== */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #94a3b8;
+            margin-bottom: 8px;
+        }
+
+        .form-group input {
+            width: 100%;
+            height: 44px;
+            padding: 0 16px;
+            font-size: 15px;
+            font-family: inherit;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-group input:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+        }
+
+        .form-group input::placeholder {
+            color: #64748b;
+        }
+
+        .form-group .hint {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 6px;
+        }
+
+        /* ===== ERROR ===== */
+        .error {
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            text-align: center;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #ef4444;
+            color: #f87171;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .error.visible {
+            display: block;
+        }
+
+        /* ===== BUTTONS ===== */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 44px;
+            padding: 0 24px;
+            font-size: 15px;
+            font-weight: 600;
+            font-family: inherit;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s, opacity 0.2s;
+            outline: none;
+        }
+
+        .btn-primary {
+            background: #6366f1;
+            color: #fff;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: #4f46e5;
+        }
+
+        .btn-success {
+            background: #16a34a;
+            color: #fff;
+            box-shadow: 0 4px 16px rgba(22, 163, 74, 0.3);
+        }
+
+        .btn-success:hover {
+            background: #15803d;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 13px;
+            font-family: inherit;
+            cursor: pointer;
+            padding: 8px 0;
+            margin-top: 16px;
+        }
+
+        .btn-back:hover {
+            color: #c7d2fe;
+        }
+
+        /* ===== FEATURES (landing) ===== */
+        .features {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .feature {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .feature-icon {
+            flex-shrink: 0;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .feature-icon.blue {
+            background: rgba(99, 102, 241, 0.2);
+        }
+
+        .feature-icon.green {
+            background: rgba(34, 197, 94, 0.2);
+        }
+
+        .feature-icon.amber {
+            background: rgba(245, 158, 11, 0.2);
+        }
+
+        .feature-text {
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+
+        .feature-text strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* ===== SUCCESS ===== */
+        .success-card {
+            text-align: center;
+        }
+
+        .success-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: rgba(34, 197, 94, 0.15);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            font-size: 32px;
+        }
+
+        .success-url {
+            display: block;
+            margin: 16px 0;
+            padding: 12px;
+            border-radius: 8px;
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: #c7d2fe;
+            font-size: 14px;
+            font-family: monospace;
+            word-break: break-all;
+            text-decoration: none;
+        }
+
+        .success-url:hover {
+            background: rgba(99, 102, 241, 0.25);
+        }
+
+        /* ===== HIDDEN ===== */
+        .hidden {
+            display: none !important;
+        }
+
+        /* ===== SPINNER ===== */
+        .spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <svg fill="none" stroke="white" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+            </div>
+            <h1>TeamBuh</h1>
+            <p class="subtitle" id="subtitle">Платформа для бухгалтерских команд</p>
+        </div>
+
+        <!-- Card -->
+        <div class="card">
+            <!-- Step indicators -->
+            <div class="steps">
+                <div class="step active" id="step1"></div>
+                <div class="step" id="step2"></div>
+                <div class="step" id="step3"></div>
+            </div>
+
+            <!-- Error message -->
+            <div class="error" id="error"></div>
+
+            <!-- ===== SCREEN 1: Landing ===== -->
+            <div id="screen-landing">
+                <div class="features">
+                    <div class="feature">
+                        <div class="feature-icon blue">👥</div>
+                        <div class="feature-text">
+                            <strong>Команды</strong> — управление сотрудниками с ролями
+                        </div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon green">📋</div>
+                        <div class="feature-text">
+                            <strong>Задачи</strong> — автогенерация, календарь, дедлайны
+                        </div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon amber">🔒</div>
+                        <div class="feature-text">
+                            <strong>Изоляция</strong> — ваши данные полностью отделены
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" onclick="showStep(2)">
+                    Зарегистрировать фирму
+                </button>
+            </div>
+
+            <!-- ===== SCREEN 2: Company info ===== -->
+            <div id="screen-company" class="hidden">
+                <div class="form-group">
+                    <label>Название фирмы</label>
+                    <input type="text" id="companyName" placeholder="ООО Ромашка" autocomplete="organization">
+                    <div class="hint">Будет отображаться в системе</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Email руководителя</label>
+                    <input type="email" id="adminEmail" placeholder="director@company.ru" autocomplete="email">
+                    <div class="hint">Для входа в систему</div>
+                </div>
+
+                <button class="btn btn-primary" onclick="goToStep3()">
+                    Далее →
+                </button>
+                <button class="btn-back" onclick="showStep(1)">← Назад</button>
+            </div>
+
+            <!-- ===== SCREEN 3: Password ===== -->
+            <div id="screen-password" class="hidden">
+                <div class="form-group">
+                    <label>Ваше имя</label>
+                    <input type="text" id="adminName" placeholder="Иван Петров" autocomplete="name">
+                </div>
+
+                <div class="form-group">
+                    <label>Придумайте пароль</label>
+                    <input type="password" id="password" placeholder="Минимум 6 символов" autocomplete="new-password"
+                        minlength="6">
+                </div>
+
+                <div class="form-group">
+                    <label>Повторите пароль</label>
+                    <input type="password" id="confirmPassword" placeholder="••••••••" autocomplete="new-password">
+                </div>
+
+                <button class="btn btn-success" id="submitBtn" onclick="submitRegistration()">
+                    Создать фирму
+                </button>
+                <button class="btn-back" onclick="showStep(2)">← Назад</button>
+            </div>
+
+            <!-- ===== SCREEN 4: Success ===== -->
+            <div id="screen-success" class="hidden success-card">
+                <div class="success-icon">✅</div>
+                <h2 style="margin-bottom: 8px;">Фирма создана!</h2>
+                <p class="subtitle" style="margin-bottom: 16px;">Ваш личный кабинет готов к работе</p>
+                <a href="#" class="success-url" id="tenantUrl" target="_blank">
+                    <!-- URL будет вставлен динамически -->
+                </a>
+                <button class="btn btn-primary" id="goBtn" onclick="goToTenant()">
+                    Войти в систему →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================================================================
+        // STATE
+        // ================================================================
+        let currentStep = 1;
+        let tenantData = null;
+
+        const screens = {
+            1: 'screen-landing',
+            2: 'screen-company',
+            3: 'screen-password',
+            4: 'screen-success'
+        };
+
+        const subtitles = {
+            1: 'Платформа для бухгалтерских команд',
+            2: 'Шаг 1 — Данные фирмы',
+            3: 'Шаг 2 — Создание аккаунта',
+            4: 'Готово!'
+        };
+
+        // ================================================================
+        // NAVIGATION
+        // ================================================================
+        function showStep(step) {
+            hideError();
+            currentStep = step;
+
+            // Hide all screens
+            Object.values(screens).forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+
+            // Show current
+            document.getElementById(screens[step]).classList.remove('hidden');
+
+            // Update steps indicator
+            for (let i = 1; i <= 3; i++) {
+                const el = document.getElementById('step' + i);
+                el.className = 'step';
+                if (i < step) el.classList.add('done');
+                if (i === step || (step === 4 && i === 3)) el.classList.add('done');
+                if (i === step && step <= 3) el.classList.add('active');
+            }
+
+            // Update subtitle
+            document.getElementById('subtitle').textContent = subtitles[step];
+        }
+
+        function goToStep3() {
+            const name = document.getElementById('companyName').value.trim();
+            const email = document.getElementById('adminEmail').value.trim();
+
+            if (!name) return showError('Введите название фирмы');
+            if (!email || !email.includes('@')) return showError('Введите корректный email');
+
+            showStep(3);
+        }
+
+        // ================================================================
+        // SUBMIT
+        // ================================================================
+        async function submitRegistration() {
+            const companyName = document.getElementById('companyName').value.trim();
+            const email = document.getElementById('adminEmail').value.trim();
+            const name = document.getElementById('adminName').value.trim();
+            const password = document.getElementById('password').value;
+            const confirm = document.getElementById('confirmPassword').value;
+
+            // Validation
+            if (!name) return showError('Введите ваше имя');
+            if (password.length < 6) return showError('Пароль — минимум 6 символов');
+            if (password !== confirm) return showError('Пароли не совпадают');
+
+            // Generate tenantId from email domain
+            const domain = email.split('@')[1];
+            const tenantId = domain ? domain.split('.')[0].toLowerCase() : companyName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            // Disable button
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Создаю...';
+            hideError();
+
+            try {
+                const response = await fetch('/api/tenants', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tenantId,
+                        email,
+                        name,
+                        password,
+                        companyName
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Ошибка создания');
+                }
+
+                // Success
+                tenantData = data.tenant;
+                document.getElementById('tenantUrl').textContent = tenantData.url;
+                document.getElementById('tenantUrl').href = tenantData.url;
+                showStep(4);
+
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Создать фирму';
+            }
+        }
+
+        function goToTenant() {
+            if (tenantData && tenantData.url) {
+                window.location.href = tenantData.url;
+            }
+        }
+
+        // ================================================================
+        // ERROR
+        // ================================================================
+        function showError(msg) {
+            const el = document.getElementById('error');
+            el.textContent = msg;
+            el.classList.add('visible');
+        }
+
+        function hideError() {
+            document.getElementById('error').classList.remove('visible');
+        }
+    </script>
+</body>
+
+</html>
