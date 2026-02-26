@@ -104,8 +104,9 @@ echo "      ✅ Порт: $APP_PORT, JWT_SECRET: ${JWT_SECRET:0:16}..."
 # 3. СОЗДАНИЕ ADMIN-ПОЛЬЗОВАТЕЛЯ
 # ==========================================
 
-echo "[3/5] Создаю администратора: $EMAIL ..."
+echo "[3/5] Устанавливаю зависимости и создаю администратора: $EMAIL ..."
 cd "$TENANT_DIR"
+npm install --omit=dev --silent
 node scripts/create-admin.js "$EMAIL" "$NAME" "$PASSWORD"
 echo "      ✅ Администратор создан"
 
