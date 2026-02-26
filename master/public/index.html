@@ -518,9 +518,18 @@
             if (password.length < 6) return showError('Пароль — минимум 6 символов');
             if (password !== confirm) return showError('Пароли не совпадают');
 
-            // Generate tenantId from email domain
-            const domain = email.split('@')[1];
-            const tenantId = domain ? domain.split('.')[0].toLowerCase() : companyName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            // Generate tenantId from company name (transliterate Russian)
+            const translitMap = {
+                'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
+                'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+                'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
+                'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
+            };
+            const tenantId = companyName.toLowerCase()
+                .split('').map(c => translitMap[c] || c).join('')
+                .replace(/[^a-z0-9]+/g, '-')  // спецсимволы → дефис
+                .replace(/^-|-$/g, '')          // убрать дефисы по краям
+                .substring(0, 30);              // ограничить длину
 
             // Disable button
             const btn = document.getElementById('submitBtn');
