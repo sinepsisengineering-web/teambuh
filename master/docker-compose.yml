@@ -67,6 +67,7 @@ services:
     environment:
       - NODE_ENV=production
       - DOMAIN=${DOMAIN:-teambuh.ru}
+      - PROJECT_ROOT=/srv
       - PORT=3000
     networks:
       - teambuh-network

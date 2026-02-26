@@ -18,6 +18,9 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DOMAIN = process.env.DOMAIN || 'teambuh.ru';
+const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..');
+const SCRIPTS_DIR = path.join(PROJECT_ROOT, 'scripts');
+const TENANTS_DIR = path.join(PROJECT_ROOT, 'tenants');
 
 app.use(express.json());
 
@@ -117,9 +120,10 @@ app.post('/api/tenants', (req, res) => {
         // Запускаем скрипт создания тенанта
         console.log(`[Master] Creating tenant: ${tenantId} (${email})`);
 
-        const scriptPath = '/srv/scripts/create-tenant.sh';
+        const scriptPath = path.join(SCRIPTS_DIR, 'create-tenant.sh');
         const output = execSync(
-            `bash ${scriptPath} "${tenantId}" "${email}" "${name}" "${password}"`,
+            `bash "${scriptPath}" "${tenantId}" "${email}" "${name}" "${password}"`,
+
             {
                 encoding: 'utf8',
                 timeout: 120000,  // 2 минуты на сборку
@@ -195,8 +199,9 @@ app.delete('/api/tenants/:id', (req, res) => {
         const { id } = req.params;
 
         // Запускаем скрипт удаления
+        const delScript = path.join(SCRIPTS_DIR, 'delete-tenant.sh');
         execSync(
-            `bash /srv/scripts/delete-tenant.sh "${id}" --force`,
+            `bash "${delScript}" "${id}" --force`,
             { encoding: 'utf8', timeout: 30000 }
         );
 
