@@ -1589,17 +1589,28 @@ app.post('/api/:tenantId/rules', (req, res) => {
     }
 
     try {
+        if (!req.user || !auth.hasMinRole(req.user.role, 'admin')) {
+            return res.status(403).json({ error: 'Недостаточно прав' });
+        }
+
         const { tenantId } = req.params;
         const ruleData = req.body;
 
         if (!ruleData.shortTitle || !ruleData.taskType) {
             return res.status(400).json({ error: 'Missing required fields: shortTitle, taskType' });
         }
+        if (ruleData.source === 'system') {
+            return res.status(403).json({ error: 'Cannot create system rules in tenant scope' });
+        }
+        if (ruleData.storageCategory === 'налоговые') {
+            return res.status(403).json({ error: 'Cannot create tax rules in tenant scope' });
+        }
 
         const tenantDb = RulesDatabase.getTenantRulesDatabase(tenantId);
 
         const newRule = {
             id: `rule_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            source: 'custom',
             ...ruleData
         };
 
@@ -1621,6 +1632,10 @@ app.put('/api/:tenantId/rules/:ruleId', (req, res) => {
     }
 
     try {
+        if (!req.user || !auth.hasMinRole(req.user.role, 'admin')) {
+            return res.status(403).json({ error: 'Недостаточно прав' });
+        }
+
         const { tenantId, ruleId } = req.params;
         const updates = req.body;
 
@@ -1634,6 +1649,15 @@ app.put('/api/:tenantId/rules/:ruleId', (req, res) => {
         // Системные правила нельзя редактировать
         if (existing.source === 'system') {
             return res.status(403).json({ error: 'Cannot modify system rules' });
+        }
+        if (existing.storageCategory === 'налоговые') {
+            return res.status(403).json({ error: 'Cannot modify tax rules in tenant scope' });
+        }
+        if (updates.source && updates.source !== existing.source) {
+            return res.status(403).json({ error: 'Cannot change rule source' });
+        }
+        if (updates.storageCategory === 'налоговые') {
+            return res.status(403).json({ error: 'Cannot move rule to tax category in tenant scope' });
         }
 
         const updated = tenantDb.update(ruleId, updates);
@@ -1654,6 +1678,10 @@ app.delete('/api/:tenantId/rules/:ruleId', (req, res) => {
     }
 
     try {
+        if (!req.user || !auth.hasMinRole(req.user.role, 'admin')) {
+            return res.status(403).json({ error: 'Недостаточно прав' });
+        }
+
         const { tenantId, ruleId } = req.params;
 
         const tenantDb = RulesDatabase.getTenantRulesDatabase(tenantId);
@@ -1666,6 +1694,9 @@ app.delete('/api/:tenantId/rules/:ruleId', (req, res) => {
         // Системные правила нельзя удалять
         if (existing.source === 'system') {
             return res.status(403).json({ error: 'Cannot delete system rules' });
+        }
+        if (existing.storageCategory === 'налоговые') {
+            return res.status(403).json({ error: 'Cannot delete tax rules in tenant scope' });
         }
 
         const deleted = tenantDb.delete(ruleId);
@@ -1680,7 +1711,7 @@ app.delete('/api/:tenantId/rules/:ruleId', (req, res) => {
 
 // Получить системные правила (из Master DB) — для SuperAdmin
 // GET /api/master/rules
-app.get('/api/master/rules', (req, res) => {
+app.get('/api/master/rules', auth.authMiddleware, auth.requireRole('super-admin'), (req, res) => {
     if (!RulesDatabase) {
         return res.status(503).json({ error: 'Rules database not available' });
     }
@@ -1697,7 +1728,7 @@ app.get('/api/master/rules', (req, res) => {
 
 // Обновить системное правило (только SuperAdmin)
 // PUT /api/master/rules/:ruleId
-app.put('/api/master/rules/:ruleId', (req, res) => {
+app.put('/api/master/rules/:ruleId', auth.authMiddleware, auth.requireRole('super-admin'), (req, res) => {
     if (!RulesDatabase) {
         return res.status(503).json({ error: 'Rules database not available' });
     }
@@ -1705,8 +1736,6 @@ app.put('/api/master/rules/:ruleId', (req, res) => {
     try {
         const { ruleId } = req.params;
         const updates = req.body;
-
-        // TODO: Проверка прав SuperAdmin
 
         const masterDb = RulesDatabase.getMasterRulesDatabase();
         const updated = masterDb.update(ruleId, updates);
@@ -1946,163 +1975,6 @@ app.delete('/api/:tenantId/archive/:archiveType/:itemId', (req, res) => {
         } else {
             res.status(404).json({ error: 'Item not found in archive' });
         }
-    }
-});
-
-// =============================================
-// RULES API (справочник правил)
-// =============================================
-
-const { getTenantRulesDatabase } = require('./database/rulesDatabase');
-
-// Получить все правила
-// GET /api/:tenantId/rules
-app.get('/api/:tenantId/rules', (req, res) => {
-    try {
-        const { tenantId } = req.params;
-        const db = getTenantRulesDatabase(tenantId);
-        const rules = db.getAll();
-        res.json(rules);
-    } catch (error) {
-        console.error('[Rules] Error getting rules:', error);
-        res.status(500).json({ error: 'Failed to get rules' });
-    }
-});
-
-// Получить правило по ID
-// GET /api/:tenantId/rules/:ruleId
-app.get('/api/:tenantId/rules/:ruleId', (req, res) => {
-    try {
-        const { tenantId, ruleId } = req.params;
-        const db = getTenantRulesDatabase(tenantId);
-        const rule = db.getById(ruleId);
-
-        if (!rule) {
-            return res.status(404).json({ error: 'Rule not found' });
-        }
-
-        res.json(rule);
-    } catch (error) {
-        console.error('[Rules] Error getting rule:', error);
-        res.status(500).json({ error: 'Failed to get rule' });
-    }
-});
-
-// Создать правило
-// POST /api/:tenantId/rules
-app.post('/api/:tenantId/rules', (req, res) => {
-    try {
-        const { tenantId } = req.params;
-        const ruleData = req.body;
-
-        if (!ruleData.id || !ruleData.shortTitle) {
-            return res.status(400).json({ error: 'Rule ID and shortTitle are required' });
-        }
-
-        const db = getTenantRulesDatabase(tenantId);
-        const rule = db.create(ruleData);
-
-        console.log(`[Rules] Rule created: ${rule.id}`);
-        res.status(201).json(rule);
-    } catch (error) {
-        console.error('[Rules] Error creating rule:', error);
-        res.status(500).json({ error: 'Failed to create rule' });
-    }
-});
-
-// Массовое создание правил (начальная загрузка)
-// POST /api/:tenantId/rules/bulk
-app.post('/api/:tenantId/rules/bulk', (req, res) => {
-    try {
-        const { tenantId } = req.params;
-        const { rules } = req.body;
-
-        if (!Array.isArray(rules)) {
-            return res.status(400).json({ error: 'Rules must be an array' });
-        }
-
-        const db = getTenantRulesDatabase(tenantId);
-        let count = 0;
-
-        for (const rule of rules) {
-            try {
-                const existing = db.getById(rule.id);
-                if (!existing) {
-                    db.create(rule);
-                    count++;
-                }
-            } catch (e) {
-                console.error(`[Rules] Error creating rule ${rule.id}:`, e);
-            }
-        }
-
-        console.log(`[Rules] Bulk created ${count} rules for tenant ${tenantId}`);
-        res.status(201).json({ created: count });
-    } catch (error) {
-        console.error('[Rules] Error bulk creating rules:', error);
-        res.status(500).json({ error: 'Failed to create rules' });
-    }
-});
-
-// Обновить правило
-// PUT /api/:tenantId/rules/:ruleId
-app.put('/api/:tenantId/rules/:ruleId', (req, res) => {
-    try {
-        const { tenantId, ruleId } = req.params;
-        const updates = req.body;
-
-        const db = getTenantRulesDatabase(tenantId);
-        const rule = db.update(ruleId, updates);
-
-        if (!rule) {
-            return res.status(404).json({ error: 'Rule not found' });
-        }
-
-        console.log(`[Rules] Rule updated: ${ruleId}`);
-        res.json(rule);
-    } catch (error) {
-        console.error('[Rules] Error updating rule:', error);
-        res.status(500).json({ error: 'Failed to update rule' });
-    }
-});
-
-// Удалить правило (soft delete)
-// DELETE /api/:tenantId/rules/:ruleId
-app.delete('/api/:tenantId/rules/:ruleId', (req, res) => {
-    try {
-        const { tenantId, ruleId } = req.params;
-
-        const db = getTenantRulesDatabase(tenantId);
-        const success = db.delete(ruleId);
-
-        if (!success) {
-            return res.status(404).json({ error: 'Rule not found' });
-        }
-
-        console.log(`[Rules] Rule deleted: ${ruleId}`);
-        res.json({ success: true });
-    } catch (error) {
-        console.error('[Rules] Error deleting rule:', error);
-        res.status(500).json({ error: 'Failed to delete rule' });
-    }
-});
-
-// Синхронизация правил (загрузка системных + объединение с tenant)
-// POST /api/:tenantId/rules/sync
-app.post('/api/:tenantId/rules/sync', (req, res) => {
-    try {
-        const { tenantId } = req.params;
-        const db = getTenantRulesDatabase(tenantId);
-        const rules = db.getAll();
-
-        res.json({
-            rules,
-            synced: rules.length,
-            total: rules.length
-        });
-    } catch (error) {
-        console.error('[Rules] Error syncing rules:', error);
-        res.status(500).json({ error: 'Failed to sync rules' });
     }
 });
 
