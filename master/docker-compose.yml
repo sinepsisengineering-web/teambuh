@@ -65,9 +65,13 @@ services:
       - ../template:/srv/template
       - ../scripts:/srv/scripts
       - ./tenants.db:/app/tenants.db
+      - ./superadmin.db:/app/superadmin.db
     environment:
       - NODE_ENV=production
       - DOMAIN=${DOMAIN:-teambuh.ru}
+      - SUPERADMIN_HOST=${SUPERADMIN_HOST:-admin-oleg.teambuh.ru}
+      - SUPERADMIN_LOGIN=${SUPERADMIN_LOGIN:-oleg}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD:-ChangeMeNow_2026}
       - PROJECT_ROOT=/srv
       - PORT=3000
     networks:
