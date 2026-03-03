@@ -93,8 +93,6 @@ function ensureDefaultSuperAdmin() {
 
     console.log('[SuperAdmin] Account configured');
     console.log(`[SuperAdmin] Login: ${login}`);
-    console.log(`[SuperAdmin] Password: ${envPassword}`);
-    console.log('[SuperAdmin] Save this password now.');
 }
 
 ensureDefaultSuperAdmin();
@@ -305,9 +303,11 @@ app.get('/api/superadmin/system-rules', requireSuperAdmin, (req, res) => {
             .prepare(`
                 SELECT
                     id,
-                    COALESCE(short_title, title, id) AS title,
+                    COALESCE(short_title, id) AS title,
                     COALESCE(description, short_description, '') AS shortDescription,
                     COALESCE(periodicity, '') AS periodicity,
+                    COALESCE(task_type, 'прочее') AS taskType,
+                    COALESCE(law_reference, '') AS lawReference,
                     COALESCE(source, 'system') AS source,
                     updated_at AS updatedAt
                 FROM task_rules
@@ -316,6 +316,115 @@ app.get('/api/superadmin/system-rules', requireSuperAdmin, (req, res) => {
             .all();
         rulesDb.close();
         return res.json({ success: true, rules });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/superadmin/system-rules', requireSuperAdmin, (req, res) => {
+    try {
+        const rulesDbPath = resolvePath([
+            path.join(TEMPLATE_DIR, 'data', 'global_data', 'rules.db'),
+            '/srv/template/data/global_data/rules.db',
+        ]);
+
+        if (!rulesDbPath) {
+            return res.status(404).json({ success: false, error: 'rules.db not found in template' });
+        }
+
+        const { id, title, shortDescription, description, periodicity, taskType, lawReference } = req.body || {};
+        const ruleId = String(id || '').trim();
+        const ruleTitle = String(title || '').trim();
+        const ruleShortDescription = String(shortDescription || '').trim();
+        if (!ruleId || !ruleTitle || !ruleShortDescription) {
+            return res.status(400).json({ success: false, error: 'id, title, shortDescription are required' });
+        }
+
+        const now = new Date().toISOString();
+        const dbw = new Database(rulesDbPath);
+        dbw.prepare(`
+            INSERT INTO task_rules (
+                id, source, storage_category, is_active, version, task_type,
+                short_title, short_description, description, title_template,
+                law_reference, periodicity, period_type, day_of_month,
+                due_date_rule, applies_to_all, completion_lead_days,
+                manual_only, created_at, updated_at, created_by
+            ) VALUES (
+                @id, 'system', 'налоговые', 1, 1, @task_type,
+                @short_title, @short_description, @description, @title_template,
+                @law_reference, @periodicity, 'past', 25,
+                'next_business_day', 1, 3,
+                0, @created_at, @updated_at, 'superadmin'
+            )
+        `).run({
+            id: ruleId,
+            task_type: String(taskType || 'прочее'),
+            short_title: ruleTitle,
+            short_description: ruleShortDescription,
+            description: String(description || ruleShortDescription).trim(),
+            title_template: ruleTitle,
+            law_reference: String(lawReference || '').trim(),
+            periodicity: String(periodicity || 'monthly'),
+            created_at: now,
+            updated_at: now,
+        });
+        dbw.close();
+        return res.json({ success: true });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.put('/api/superadmin/system-rules/:ruleId', requireSuperAdmin, (req, res) => {
+    try {
+        const rulesDbPath = resolvePath([
+            path.join(TEMPLATE_DIR, 'data', 'global_data', 'rules.db'),
+            '/srv/template/data/global_data/rules.db',
+        ]);
+
+        if (!rulesDbPath) {
+            return res.status(404).json({ success: false, error: 'rules.db not found in template' });
+        }
+
+        const ruleId = String(req.params.ruleId || '').trim();
+        const { title, shortDescription, description, periodicity, taskType, lawReference } = req.body || {};
+        const ruleTitle = String(title || '').trim();
+        const ruleShortDescription = String(shortDescription || '').trim();
+        if (!ruleId || !ruleTitle || !ruleShortDescription) {
+            return res.status(400).json({ success: false, error: 'ruleId, title, shortDescription are required' });
+        }
+
+        const dbw = new Database(rulesDbPath);
+        const result = dbw.prepare(`
+            UPDATE task_rules SET
+                short_title = @short_title,
+                short_description = @short_description,
+                description = @description,
+                title_template = @title_template,
+                periodicity = @periodicity,
+                task_type = @task_type,
+                law_reference = @law_reference,
+                storage_category = 'налоговые',
+                source = 'system',
+                updated_at = @updated_at
+            WHERE id = @id
+        `).run({
+            id: ruleId,
+            short_title: ruleTitle,
+            short_description: ruleShortDescription,
+            description: String(description || ruleShortDescription).trim(),
+            title_template: ruleTitle,
+            periodicity: String(periodicity || 'monthly'),
+            task_type: String(taskType || 'прочее'),
+            law_reference: String(lawReference || '').trim(),
+            updated_at: new Date().toISOString(),
+        });
+        dbw.close();
+
+        if (!result.changes) {
+            return res.status(404).json({ success: false, error: 'Rule not found' });
+        }
+        return res.json({ success: true });
     } catch (error) {
         return res.status(500).json({ success: false, error: error.message });
     }

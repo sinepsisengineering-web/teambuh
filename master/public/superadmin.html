@@ -57,6 +57,11 @@
 
     .section { display:none; }
     .section.active { display:block; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(2,6,23,.55); display:flex; align-items:center; justify-content:center; z-index:1000; padding:16px; }
+    .modal-card { width:100%; max-width:760px; max-height:90vh; overflow:auto; background:#fff; border:1px solid #d1d5db; border-radius:14px; }
+    .modal-head { display:flex; justify-content:space-between; align-items:center; padding:14px; border-bottom:1px solid #e2e8f0; }
+    .modal-body { padding:14px; display:flex; flex-direction:column; gap:10px; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:8px; padding:14px; border-top:1px solid #e2e8f0; }
   </style>
 </head>
 <body>
@@ -159,6 +164,42 @@
     </main>
   </div>
 
+  <div id="ruleModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="ruleModalTitle" style="margin:0;">Налоговое правило</h3>
+        <button id="ruleModalClose" class="btn btn-ghost">Закрыть</button>
+      </div>
+      <div class="modal-body">
+        <input id="ruleId" class="field" placeholder="ID правила (например TAX_CUSTOM_001)" />
+        <input id="ruleTitle" class="field" placeholder="Название (кратко)" />
+        <input id="ruleShortDescription" class="field" placeholder="Уточнение" />
+        <textarea id="ruleDescription" class="field" rows="4" placeholder="Полное описание"></textarea>
+        <input id="ruleLawReference" class="field" placeholder="Основание (ссылка на закон)" />
+        <div class="row">
+          <select id="ruleTaskType" class="field" style="max-width:220px;">
+            <option value="уведомление">Уведомление</option>
+            <option value="отчёт">Отчёт</option>
+            <option value="оплата">Оплата</option>
+            <option value="прочее" selected>Прочее</option>
+          </select>
+          <select id="rulePeriodicity" class="field" style="max-width:220px;">
+            <option value="monthly" selected>monthly</option>
+            <option value="quarterly">quarterly</option>
+            <option value="yearly">yearly</option>
+            <option value="weekly">weekly</option>
+            <option value="daily">daily</option>
+          </select>
+        </div>
+        <div class="muted" style="font-size:12px;">Категория фиксирована: Общие налоговые.</div>
+      </div>
+      <div class="modal-actions">
+        <button id="ruleModalCancel" class="btn btn-ghost">Отмена</button>
+        <button id="ruleModalSave" class="btn btn-pri">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const tokenKey = 'superadmin_token';
     const sections = {
@@ -200,6 +241,8 @@
     };
 
     let tenantsCache = [];
+    let rulesCache = [];
+    let editingRuleId = null;
 
     const renderTenants = (rows) => {
       tenantsCache = rows || [];
@@ -233,6 +276,7 @@
     };
 
     const renderRules = (rows) => {
+      rulesCache = rows || [];
       const wrap = $('rulesList');
       wrap.innerHTML = '';
       rows.forEach((r) => {
@@ -244,7 +288,7 @@
               <h4 class="rule-title">${r.title || r.id}</h4>
               <div class="muted" style="margin-top:4px;">${r.shortDescription || ''}</div>
             </div>
-            <button class="btn btn-ghost">✏️ Редактировать</button>
+            <button class="btn btn-ghost" data-edit-rule="${r.id}">✏️ Редактировать</button>
           </div>
           <div class="rule-meta">
             <span class="pill">${r.periodicity || 'Без периодичности'}</span>
@@ -253,6 +297,80 @@
         `;
         wrap.appendChild(item);
       });
+      wrap.querySelectorAll('button[data-edit-rule]').forEach((btn) => {
+        btn.addEventListener('click', () => openRuleModal(btn.getAttribute('data-edit-rule')));
+      });
+    };
+
+    const resetRuleModal = () => {
+      editingRuleId = null;
+      $('ruleModalTitle').textContent = 'Новое налоговое правило';
+      $('ruleId').disabled = false;
+      $('ruleId').value = '';
+      $('ruleTitle').value = '';
+      $('ruleShortDescription').value = '';
+      $('ruleDescription').value = '';
+      $('ruleLawReference').value = '';
+      $('ruleTaskType').value = 'прочее';
+      $('rulePeriodicity').value = 'monthly';
+    };
+
+    const openRuleModal = (ruleId = null) => {
+      resetRuleModal();
+      if (ruleId) {
+        const rule = rulesCache.find(r => r.id === ruleId);
+        if (rule) {
+          editingRuleId = rule.id;
+          $('ruleModalTitle').textContent = 'Редактирование налогового правила';
+          $('ruleId').value = rule.id || '';
+          $('ruleId').disabled = true;
+          $('ruleTitle').value = rule.title || '';
+          $('ruleShortDescription').value = rule.shortDescription || '';
+          $('ruleDescription').value = rule.shortDescription || '';
+          $('ruleLawReference').value = rule.lawReference || '';
+          $('ruleTaskType').value = rule.taskType || 'прочее';
+          $('rulePeriodicity').value = rule.periodicity || 'monthly';
+        }
+      }
+      $('ruleModal').classList.remove('hidden');
+    };
+
+    const closeRuleModal = () => $('ruleModal').classList.add('hidden');
+
+    const saveRule = async () => {
+      const id = $('ruleId').value.trim();
+      const title = $('ruleTitle').value.trim();
+      const shortDescription = $('ruleShortDescription').value.trim();
+      const description = $('ruleDescription').value.trim();
+      const lawReference = $('ruleLawReference').value.trim();
+      const taskType = $('ruleTaskType').value;
+      const periodicity = $('rulePeriodicity').value;
+
+      if (!id || !title || !shortDescription) {
+        alert('Заполните обязательные поля: ID, Название, Уточнение');
+        return;
+      }
+
+      const payload = { id, title, shortDescription, description, lawReference, taskType, periodicity };
+      if (editingRuleId) {
+        await api(`/api/superadmin/system-rules/${encodeURIComponent(editingRuleId)}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+          headers: {}
+        });
+        log(`Правило обновлено: ${editingRuleId}`);
+      } else {
+        await api('/api/superadmin/system-rules', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: {}
+        });
+        log(`Правило добавлено: ${id}`);
+      }
+
+      closeRuleModal();
+      const r = await api('/api/superadmin/system-rules');
+      renderRules(r.rules || []);
     };
 
     const loadAll = async () => {
@@ -319,7 +437,16 @@
     $('pullCode2').addEventListener('click', doPull);
     $('deploySelected2').addEventListener('click', doDeploy);
 
-    $('addRuleBtn').addEventListener('click', () => alert('Форма добавления правила подключается следующим шагом.'));
+    $('addRuleBtn').addEventListener('click', () => openRuleModal());
+    $('ruleModalClose').addEventListener('click', closeRuleModal);
+    $('ruleModalCancel').addEventListener('click', closeRuleModal);
+    $('ruleModalSave').addEventListener('click', async () => {
+      try {
+        await saveRule();
+      } catch (e) {
+        alert(`Ошибка сохранения: ${e.message}`);
+      }
+    });
 
     (async () => {
       const token = localStorage.getItem(tokenKey);
