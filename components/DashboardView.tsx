@@ -13,6 +13,11 @@ interface TabConfig {
     icon: React.ReactNode;
 }
 
+interface DashboardViewProps {
+    isSuperAdmin?: boolean;
+    isAdmin?: boolean;
+}
+
 const tabs: TabConfig[] = [
     {
         id: 'main',
@@ -74,13 +79,16 @@ const tabContent: Record<DashboardTab, string> = {
     services: 'Услуги',
 };
 
-export const DashboardView: React.FC = () => {
+export const DashboardView: React.FC<DashboardViewProps> = ({
+    isSuperAdmin = false,
+    isAdmin = false,
+}) => {
     const [activeTab, setActiveTab] = useState<DashboardTab>('main');
 
     const renderTabContent = () => {
         switch (activeTab) {
             case 'references':
-                return <RulesView isSuperAdmin={true} isAdmin={true} />;
+                return <RulesView isSuperAdmin={isSuperAdmin} isAdmin={isAdmin} />;
             case 'services':
                 return <ServicesView />;
             default:

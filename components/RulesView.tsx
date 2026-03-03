@@ -558,15 +558,24 @@ export const RulesView: React.FC<RulesViewProps> = ({
 
     // Обработчики
     const handleDeleteClick = () => {
-        // Супер-админ может удалять любые правила, обычный — только кастомные
-        if (!isSuperAdmin && !selectedRule?.isCustom) return;
+        // Супер-админ может удалять любые правила.
+        // Директор — только кастомные НЕналоговые.
+        if (!selectedRule) return;
+        if (!isSuperAdmin) {
+            if (!selectedRule.isCustom) return;
+            if (selectedRule.category === 'налоговые') return;
+        }
         setShowDeleteConfirm(true);
     };
 
     const handleDeleteConfirm = async () => {
         if (!selectedRule) return;
-        // Супер-админ может удалять любые правила, обычный — только кастомные
-        if (!isSuperAdmin && !selectedRule.isCustom) return;
+        // Супер-админ может удалять любые правила.
+        // Директор — только кастомные НЕналоговые.
+        if (!isSuperAdmin) {
+            if (!selectedRule.isCustom) return;
+            if (selectedRule.category === 'налоговые') return;
+        }
         try {
             // Сначала удаляем из БД (soft delete — is_active = 0)
             await deleteRuleFromApi(selectedRule.id);
@@ -582,7 +591,11 @@ export const RulesView: React.FC<RulesViewProps> = ({
     };
 
     const canEditRule = (rule: DisplayRule): boolean => {
-        if (rule.isCustom) return isAdmin || isSuperAdmin;
+        if (rule.isCustom) {
+            if (isSuperAdmin) return true;
+            if (isAdmin && rule.category !== 'налоговые') return true;
+            return false;
+        }
         return isSuperAdmin;
     };
 
@@ -754,7 +767,13 @@ export const RulesView: React.FC<RulesViewProps> = ({
                 }}
                 isSuperAdmin={isSuperAdmin}
                 editingRule={editingRule}
-                defaultCategory={FOLDERS.find(f => f.id === activeFolder)?.category || 'налоговые'}
+                defaultCategory={
+                    (() => {
+                        const folderCategory = FOLDERS.find(f => f.id === activeFolder)?.category;
+                        if (folderCategory === 'налоговые' && !isSuperAdmin) return 'финансовые';
+                        return folderCategory || (isSuperAdmin ? 'налоговые' : 'финансовые');
+                    })()
+                }
             />
         </div>
     );

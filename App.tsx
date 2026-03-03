@@ -70,6 +70,10 @@ const App: React.FC = () => {
 
 // Выносим основную логику в отдельный компонент
 const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }> = ({ confirm }) => {
+    const { user } = useAuth();
+    const isSuperAdmin = user?.role === 'super-admin';
+    const isAdmin = isSuperAdmin || user?.role === 'admin';
+
     // Данные загружаются с сервера при монтировании
     const [legalEntities, setLegalEntities] = useState<LegalEntity[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
@@ -317,7 +321,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
             return null; // TODO: создать компонент ClientDetailCard
         }
         switch (activeView) {
-            case 'dashboard': return <DashboardView />;
+            case 'dashboard': return <DashboardView isSuperAdmin={isSuperAdmin} isAdmin={isAdmin} />;
             // ВРЕМЕННО ОТКЛЮЧЕНО: case 'calendar': return <Calendar ... />;
             case 'tasks':
                 return <TasksView
@@ -359,7 +363,7 @@ const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }
                 onDataChanged={reloadData}
                 confirm={confirm}
             />;
-            case 'rules': return <RulesView isSuperAdmin={true} isAdmin={true} />;
+            case 'rules': return <RulesView isSuperAdmin={isSuperAdmin} isAdmin={isAdmin} />;
             case 'archive': return <ArchiveView onBack={() => setActiveView('tasks')} onRestoreItem={reloadData} />;
             case 'settings': return <SettingsView />;
             default: return null;
