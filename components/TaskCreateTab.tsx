@@ -296,6 +296,55 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
     const [saveModalError, setSaveModalError] = useState('');
     const [savedCount, setSavedCount] = useState(0);
 
+    const formatDateYmd = (d: Date): string => {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const addCycleStep = (base: Date, freq: RepeatFrequency, step: number): Date => {
+        const d = new Date(base);
+        switch (freq) {
+            case RepeatFrequency.Daily:
+                d.setDate(d.getDate() + step);
+                break;
+            case RepeatFrequency.Weekly:
+                d.setDate(d.getDate() + (7 * step));
+                break;
+            case RepeatFrequency.Biweekly:
+                d.setDate(d.getDate() + (14 * step));
+                break;
+            case RepeatFrequency.Quarterly:
+                d.setMonth(d.getMonth() + (3 * step));
+                break;
+            case RepeatFrequency.Yearly:
+                d.setFullYear(d.getFullYear() + step);
+                break;
+            case RepeatFrequency.Monthly:
+            default:
+                d.setMonth(d.getMonth() + step);
+                break;
+        }
+        return d;
+    };
+
+    const getOccurrencesCount = (freq: RepeatFrequency): number => {
+        switch (freq) {
+            case RepeatFrequency.Daily:
+                return 30;   // 30 дней вперед
+            case RepeatFrequency.Weekly:
+                return 12;   // 12 недель вперед
+            case RepeatFrequency.Biweekly:
+                return 12;   // 24 недели вперед
+            case RepeatFrequency.Monthly:
+                return 12;   // 12 месяцев вперед
+            case RepeatFrequency.Quarterly:
+                return 8;    // 2 года вперед
+            case RepeatFrequency.Yearly:
+                return 3;    // 3 года вперед
+            default:
+                return 1;
+        }
+    };
+
     // --- Фильтрованные списки ---
     const filteredClients = useMemo(() => {
         if (!clientSearch) return legalEntities;
@@ -392,9 +441,14 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
             }
 
             // --- Режим создания ---
-            // Применяем перенос даты с выходных
-            const creationAdjustedDate = adjustDate(new Date(dueDate + 'T00:00:00'), dueDateRuleValue as TaskDueDateRule);
-            const creationDateStr = `${creationAdjustedDate.getFullYear()}-${String(creationAdjustedDate.getMonth() + 1).padStart(2, '0')}-${String(creationAdjustedDate.getDate()).padStart(2, '0')}`;
+            const baseDate = new Date(`${dueDate}T00:00:00`);
+            const occurrenceCount = isRepeating ? getOccurrencesCount(repeatFrequency) : 1;
+            const occurrenceDates: string[] = [];
+            for (let i = 0; i < occurrenceCount; i++) {
+                const rawDate = isRepeating ? addCycleStep(baseDate, repeatFrequency, i) : baseDate;
+                const adjustedDate = adjustDate(rawDate, dueDateRuleValue as TaskDueDateRule);
+                occurrenceDates.push(formatDateYmd(adjustedDate));
+            }
 
             const tasksToCreate: Parameters<typeof taskStorage.createTask>[0][] = [];
             const baseTask = {
@@ -403,7 +457,6 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
                 taskSource: 'manual' as const,
                 recurrence: isRepeating ? 'cyclic' as const : 'oneTime' as const,
                 cyclePattern: isRepeating ? repeatFrequency : undefined,
-                dueDate: creationDateStr,
                 status: 'pending',
                 completionLeadDays,
                 ruleId: appliedRuleId || undefined,
@@ -414,33 +467,42 @@ export const TaskCreateTab: React.FC<TaskCreateTabProps> = ({
                 for (const clientId of selectedClientIds) {
                     const client = legalEntities.find(c => c.id === clientId);
                     if (client) {
-                        tasksToCreate.push({
-                            ...baseTask,
-                            id: generateId('task'),
-                            clientId: client.id,
-                            clientName: client.name,
-                        });
+                        for (const taskDate of occurrenceDates) {
+                            tasksToCreate.push({
+                                ...baseTask,
+                                id: generateId('task'),
+                                dueDate: taskDate,
+                                clientId: client.id,
+                                clientName: client.name,
+                            });
+                        }
                     }
                 }
             } else if (bindingType === 'staff') {
                 for (const empId of selectedEmployeeIds) {
                     const emp = employees.find(e => e.id === empId);
                     if (emp) {
-                        tasksToCreate.push({
-                            ...baseTask,
-                            id: generateId('task'),
-                            clientId: empId,
-                            clientName: `${emp.lastName} ${emp.firstName}`,
-                        });
+                        for (const taskDate of occurrenceDates) {
+                            tasksToCreate.push({
+                                ...baseTask,
+                                id: generateId('task'),
+                                dueDate: taskDate,
+                                clientId: empId,
+                                clientName: `${emp.lastName} ${emp.firstName}`,
+                            });
+                        }
                     }
                 }
             } else {
-                tasksToCreate.push({
-                    ...baseTask,
-                    id: generateId('task'),
-                    clientId: '__unassigned__',
-                    clientName: 'Без привязки',
-                });
+                for (const taskDate of occurrenceDates) {
+                    tasksToCreate.push({
+                        ...baseTask,
+                        id: generateId('task'),
+                        dueDate: taskDate,
+                        clientId: '__unassigned__',
+                        clientName: 'Без привязки',
+                    });
+                }
             }
 
             let successCount = 0;

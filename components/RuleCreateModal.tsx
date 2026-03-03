@@ -177,6 +177,7 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
     const [dueDateRule, setDueDateRule] = useState<TaskDueDateRule>(TaskDueDateRule.NextBusinessDay);
     const [completionLeadDays, setCompletionLeadDays] = useState<number>(3);
     const [isSaving, setIsSaving] = useState(false);
+    const [validationError, setValidationError] = useState<string | null>(null);
 
     // Категории в зависимости от роли
     const categories = isSuperAdmin ? CATEGORIES_SUPERADMIN : CATEGORIES_ADMIN;
@@ -303,11 +304,11 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
     // Обработчик сохранения
     const handleSave = async () => {
         if (!shortTitle.trim()) {
-            alert('Заполните название');
+            setValidationError('Пожалуйста, заполните название правила.');
             return;
         }
         if (!isTemplate && !shortDescription.trim()) {
-            alert('Заполните уточнение');
+            setValidationError('Пожалуйста, заполните уточнение (выделено красным).');
             return;
         }
 
@@ -357,7 +358,7 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
             onClose();
         } catch (error) {
             console.error('Ошибка сохранения:', error);
-            alert('Ошибка сохранения');
+            setValidationError('Ошибка сохранения. Попробуйте еще раз.');
         } finally {
             setIsSaving(false);
         }
@@ -366,11 +367,12 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-            <div
-                className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-auto m-4"
-                onClick={e => e.stopPropagation()}
-            >
+        <>
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+                <div
+                    className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-auto m-4"
+                    onClick={e => e.stopPropagation()}
+                >
                 {/* Шапка */}
                 <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between">
                     <span className="text-lg font-semibold text-slate-800">
@@ -774,24 +776,55 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
                     </div>
                 </div>
 
-                {/* Кнопки */}
-                <div className="border-t border-slate-200 px-6 py-4 flex justify-end gap-3">
-                    <button
-                        onClick={onClose}
-                        className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
-                    >
-                        Отмена
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className="px-6 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-50"
-                    >
-                        {isSaving ? 'Сохранение...' : (isEditMode ? 'Сохранить изменения' : (isTemplate ? 'Создать шаблон' : 'Создать правило'))}
-                    </button>
+                    {/* Кнопки */}
+                    <div className="border-t border-slate-200 px-6 py-4 flex justify-end gap-3">
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+                        >
+                            Отмена
+                        </button>
+                        <button
+                            onClick={handleSave}
+                            disabled={isSaving}
+                            className="px-6 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-50"
+                        >
+                            {isSaving ? 'Сохранение...' : (isEditMode ? 'Сохранить изменения' : (isTemplate ? 'Создать шаблон' : 'Создать правило'))}
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            {/* Модалка валидации (единый стиль, без системного alert) */}
+            {validationError && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[120]">
+                    <div className="bg-white rounded-xl shadow-2xl w-[420px] overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="px-5 py-4 bg-red-50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                    <span className="text-xl">⚠️</span>
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-slate-800">Внимание!</h3>
+                                    <p className="text-xs text-slate-500">Заполните обязательные поля</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="px-5 py-4">
+                            <p className="text-sm text-red-600">{validationError}</p>
+                        </div>
+                        <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                            <button
+                                onClick={() => setValidationError(null)}
+                                className="px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-hover transition-colors"
+                            >
+                                Понятно
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 };
 
