@@ -151,7 +151,34 @@ http:
           - url: "http://teambuh-$TENANT_ID:3001"
 EOF
 
-echo "      ✅ Роут: $TENANT_ID.$DOMAIN → teambuh-$TENANT_ID:3001"
+echo "      ✅ Роут: $TENANT_ID.$DOMAIN -> teambuh-$TENANT_ID:3001"
+
+# ==========================================
+# 6. ОЖИДАНИЕ ГОТОВНОСТИ HTTPS
+# ==========================================
+
+echo "[6/6] Жду готовность HTTPS (сертификат + ответ сайта) ..."
+TENANT_URL="https://$TENANT_ID.$DOMAIN/"
+MAX_WAIT=300
+INTERVAL=5
+ELAPSED=0
+
+while true; do
+    if curl -fsSI "$TENANT_URL" >/dev/null 2>&1; then
+        echo "      ✅ HTTPS готов: $TENANT_URL"
+        break
+    fi
+
+    if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+        echo "      ❌ HTTPS не готов за $MAX_WAIT сек: $TENANT_URL"
+        echo "      Проверьте DNS и логи Traefik, затем повторите позже."
+        exit 1
+    fi
+
+    sleep "$INTERVAL"
+    ELAPSED=$((ELAPSED + INTERVAL))
+    echo "      ...жду SSL: $ELAPSED/$MAX_WAIT сек"
+done
 
 # ==========================================
 # ИТОГ
