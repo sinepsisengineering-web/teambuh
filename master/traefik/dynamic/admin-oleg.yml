@@ -1,0 +1,18 @@
+# Статический роут для SuperAdmin панели
+# Важно: сейчас UI SuperAdmin обслуживается из контейнера teambuh-test-2.
+# Если нужен другой источник UI, поменяйте host в service URL.
+http:
+  routers:
+    superadmin:
+      rule: "Host(`admin-oleg.teambuh.ru`)"
+      service: superadmin-ui
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: le
+
+  services:
+    superadmin-ui:
+      loadBalancer:
+        servers:
+          - url: "http://teambuh-test-2:3001"

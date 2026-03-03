@@ -15,6 +15,7 @@ import { ClientsView } from './components/ClientsView';
 import { LoginScreen } from './components/LoginScreen';
 // ВРЕМЕННО ОТКЛЮЧЕНО: import { ClientDetailCard } from './components/ClientDetailCard';
 import { RulesView } from './components/RulesView';
+import { SuperAdminPreview } from './components/SuperAdminPreview';
 import { LegalEntity, Task, Note, Employee, LegalForm, TaxSystem } from './types';
 import { DUMMY_CLIENTS, DUMMY_EMPLOYEES } from './dummy-data';
 import { useTasks } from './hooks/useTasks';
@@ -46,6 +47,30 @@ const parseLegalEntity = (le: any): LegalEntity => {
 const App: React.FC = () => {
     const confirm = useConfirmation();
     const { isAuthenticated, isLoading: authLoading } = useAuth();
+    const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+    const isSuperAdminHost = currentHost === 'admin-oleg.teambuh.ru';
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    const querySuperAdminMode = params.get('superadmin_mode') === '1';
+    const querySuperAdminTenant = params.get('superadmin_tenant');
+    const showSuperAdminPreview = typeof window !== 'undefined' &&
+        (params.get('superadmin-preview') === '1' || isSuperAdminHost);
+    const superAdminPreviewMode = typeof window !== 'undefined' &&
+        localStorage.getItem('superadmin_mode') === '1';
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (!querySuperAdminMode) return;
+        localStorage.setItem('superadmin_mode', '1');
+        if (querySuperAdminTenant) {
+            localStorage.setItem('superadmin_tenant', querySuperAdminTenant);
+        }
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, '', cleanUrl);
+    }, [querySuperAdminMode, querySuperAdminTenant]);
+
+    if (showSuperAdminPreview) {
+        return <SuperAdminPreview />;
+    }
 
     // ВРЕМЕННО: Сразу показываем LoginScreen для теста
     // return <LoginScreen />;
@@ -59,19 +84,22 @@ const App: React.FC = () => {
         );
     }
 
-    // Если не авторизован — показываем экран входа
-    if (!isAuthenticated) {
+    // Если не авторизован и нет локального superadmin preview-режима — показываем экран входа
+    if (!isAuthenticated && !superAdminPreviewMode) {
         return <LoginScreen />;
     }
 
     // Основное приложение (будет отрисовано ниже)
-    return <AuthenticatedApp confirm={confirm} />;
+    return <AuthenticatedApp confirm={confirm} forceSuperAdminMode={superAdminPreviewMode || querySuperAdminMode} />;
 };
 
 // Выносим основную логику в отдельный компонент
-const AuthenticatedApp: React.FC<{ confirm: ReturnType<typeof useConfirmation> }> = ({ confirm }) => {
+const AuthenticatedApp: React.FC<{
+    confirm: ReturnType<typeof useConfirmation>;
+    forceSuperAdminMode?: boolean;
+}> = ({ confirm, forceSuperAdminMode = false }) => {
     const { user } = useAuth();
-    const isSuperAdmin = user?.role === 'super-admin';
+    const isSuperAdmin = forceSuperAdminMode || user?.role === 'super-admin';
     const isAdmin = isSuperAdmin || user?.role === 'admin';
 
     // Данные загружаются с сервера при монтировании

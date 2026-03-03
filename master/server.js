@@ -25,6 +25,26 @@ const TEMPLATE_DIR = path.join(PROJECT_ROOT, 'template');
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+    const origin = req.headers.origin || '';
+    const allow =
+        origin.includes('.teambuh.ru') ||
+        origin === 'https://teambuh.ru' ||
+        origin === 'http://localhost:5173' ||
+        origin === 'http://127.0.0.1:5173';
+
+    if (allow) {
+        res.header('Access-Control-Allow-Origin', origin);
+    }
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+    next();
+});
+
 // Лендинг + форма регистрации
 app.use(express.static(path.join(__dirname, 'public')));
 

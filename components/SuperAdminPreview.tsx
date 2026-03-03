@@ -71,6 +71,8 @@ const splitOutput = (output: string) =>
         .filter(Boolean);
 
 export const SuperAdminPreview: React.FC = () => {
+    const isAdminHost = typeof window !== 'undefined' && window.location.hostname === 'admin-oleg.teambuh.ru';
+    const apiBase = isAdminHost ? 'https://teambuh.ru' : '';
     const [section, setSection] = useState<Section>('tenants');
     const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
     const [isUpdateRunning, setIsUpdateRunning] = useState(false);
@@ -105,7 +107,7 @@ export const SuperAdminPreview: React.FC = () => {
     const loadTenants = async () => {
         setIsLoadingTenants(true);
         try {
-            const response = await fetch('/api/tenants');
+            const response = await fetch(`${apiBase}/api/tenants`);
             const payload = await response.json();
             if (!response.ok || !payload?.success) {
                 throw new Error(payload?.error || 'Не удалось загрузить клиентов');
@@ -133,7 +135,7 @@ export const SuperAdminPreview: React.FC = () => {
     const loadSystemRules = async () => {
         setIsLoadingRules(true);
         try {
-            const response = await fetch('/api/system-rules');
+            const response = await fetch(`${apiBase}/api/system-rules`);
             const payload = await response.json();
             if (!response.ok || !payload?.success) {
                 throw new Error(payload?.error || 'Не удалось загрузить системные правила');
@@ -172,7 +174,7 @@ export const SuperAdminPreview: React.FC = () => {
         setIsUpdateRunning(true);
         appendLog('=== Подтянуть код из Git ===');
         try {
-            const response = await fetch('/api/deploy/pull-code', {
+            const response = await fetch(`${apiBase}/api/deploy/pull-code`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
             });
@@ -200,7 +202,7 @@ export const SuperAdminPreview: React.FC = () => {
         appendLog('Режим: код + серверные правила + пересборка');
 
         try {
-            const response = await fetch('/api/deploy/update-tenants', {
+            const response = await fetch(`${apiBase}/api/deploy/update-tenants`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tenantIds: selectedTenantIds }),
@@ -255,9 +257,7 @@ export const SuperAdminPreview: React.FC = () => {
                             <button
                                 className="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700"
                                 onClick={() => {
-                                    localStorage.setItem('superadmin_mode', '1');
-                                    localStorage.setItem('superadmin_tenant', row.tenantId);
-                                    window.location.href = '/';
+                                    window.location.href = `https://${row.tenantId}.teambuh.ru/?superadmin_mode=1&superadmin_tenant=${encodeURIComponent(row.tenantId)}`;
                                 }}
                             >
                                 Войти
@@ -471,7 +471,7 @@ export const SuperAdminPreview: React.FC = () => {
                 <aside className="bg-[linear-gradient(160deg,#0f172a_0%,#1e1b4b_50%,#0f172a_100%)] text-white p-5 flex flex-col">
                     <div className="mb-6">
                         <div className="text-2xl font-bold">TeamBuh</div>
-                        <div className="text-indigo-200 text-sm">SuperAdmin Preview</div>
+                        <div className="text-indigo-200 text-sm">SuperAdmin</div>
                     </div>
                     <nav className="space-y-1">
                         {sections.map(s => (
