@@ -71,7 +71,7 @@ services:
       - DOMAIN=${DOMAIN:-teambuh.ru}
       - SUPERADMIN_HOST=${SUPERADMIN_HOST:-admin-oleg.teambuh.ru}
       - SUPERADMIN_LOGIN=${SUPERADMIN_LOGIN:-oleg}
-      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD:-ChangeMeNow_2026}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD:-J9v#3Qm@7Rk$$2Lp%8Tx^4Nb}
       - PROJECT_ROOT=/srv
       - PORT=3000
     networks:

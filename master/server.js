@@ -73,36 +73,28 @@ superAdminDb.exec(`
 `);
 
 function ensureDefaultSuperAdmin() {
-    const count = superAdminDb.prepare('SELECT COUNT(*) as c FROM superadmins').get().c;
-    if (count > 0) return;
-
     const login = process.env.SUPERADMIN_LOGIN || 'oleg';
-    const envPassword = process.env.SUPERADMIN_PASSWORD;
-    const generatedPassword = envPassword || generateStrongPassword(24);
+    const envPassword = process.env.SUPERADMIN_PASSWORD || 'J9v#3Qm@7Rk$2Lp%8Tx^4Nb';
     const now = new Date().toISOString();
-    const hash = bcrypt.hashSync(generatedPassword, 10);
+    const hash = bcrypt.hashSync(envPassword, 10);
+
+    superAdminDb.prepare('UPDATE superadmins SET is_active = 0 WHERE login != ?').run(login);
 
     superAdminDb
         .prepare(`
             INSERT INTO superadmins (login, password_hash, is_active, created_at, updated_at)
             VALUES (?, ?, 1, ?, ?)
+            ON CONFLICT(login) DO UPDATE SET
+                password_hash = excluded.password_hash,
+                is_active = 1,
+                updated_at = excluded.updated_at
         `)
         .run(login, hash, now, now);
 
-    console.log('[SuperAdmin] Default account created');
+    console.log('[SuperAdmin] Account configured');
     console.log(`[SuperAdmin] Login: ${login}`);
-    console.log(`[SuperAdmin] Password: ${generatedPassword}`);
+    console.log(`[SuperAdmin] Password: ${envPassword}`);
     console.log('[SuperAdmin] Save this password now.');
-}
-
-function generateStrongPassword(length = 24) {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()_-+=';
-    const bytes = crypto.randomBytes(length);
-    let out = '';
-    for (let i = 0; i < length; i += 1) {
-        out += chars[bytes[i] % chars.length];
-    }
-    return out;
 }
 
 ensureDefaultSuperAdmin();

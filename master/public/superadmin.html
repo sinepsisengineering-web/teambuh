@@ -2,108 +2,190 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>TeamBuh SuperAdmin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TeamBuh — SuperAdmin</title>
   <style>
-    :root { --bg:#0f172a; --card:#1e293b; --muted:#94a3b8; --pri:#6366f1; --ok:#16a34a; --line:#334155; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: Inter, system-ui, -apple-system, sans-serif; background:linear-gradient(140deg,#0f172a,#1e1b4b); color:#e2e8f0; }
-    .wrap { max-width: 1180px; margin: 24px auto; padding: 0 16px; }
-    .card { background: rgba(30,41,59,.9); border:1px solid var(--line); border-radius: 14px; padding:16px; }
-    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    input,button,select { font: inherit; }
-    input,select { background:#0b1220; border:1px solid var(--line); color:#fff; border-radius:10px; padding:10px 12px; }
-    button { border:0; border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer; }
-    .btn { background:var(--pri); color:#fff; }
-    .btn2 { background:#0b1220; color:#cbd5e1; border:1px solid var(--line); }
-    .ok { background:var(--ok); color:#fff; }
-    .muted { color:var(--muted); font-size:13px; }
-    table { width:100%; border-collapse: collapse; }
-    th,td { border-top:1px solid var(--line); padding:10px; text-align:left; font-size:14px; }
-    th { color:#94a3b8; font-weight:600; background:#111827; }
+    :root {
+      --bg1:#0f172a; --bg2:#1e1b4b; --panel:#1e293b; --panel2:#0b1220;
+      --line:#334155; --text:#e2e8f0; --muted:#94a3b8; --pri:#6366f1; --ok:#16a34a;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color:var(--text); background:linear-gradient(135deg,var(--bg1),var(--bg2)); }
     .hidden { display:none !important; }
-    .pill { border:1px solid var(--line); background:#0b1220; border-radius:999px; padding:3px 9px; font-size:12px; }
-    .grid { display:grid; grid-template-columns: 1fr; gap:14px; }
-    @media (min-width: 980px) { .grid { grid-template-columns: 1.15fr .85fr; } }
-    .log { background:#05070d; border:1px solid #1f2937; border-radius:12px; padding:10px; min-height:180px; max-height:360px; overflow:auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .danger { background:#7f1d1d; color:#fecaca; border:1px solid #b91c1c; padding:10px; border-radius:10px; }
+
+    .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; }
+    .login-card { width:100%; max-width:430px; background:rgba(30,41,59,.9); border:1px solid var(--line); border-radius:14px; padding:20px; }
+    .h1 { margin:0 0 8px; font-size:28px; font-weight:800; }
+    .muted { color:var(--muted); }
+    input, button { font:inherit; }
+    .field { width:100%; margin-top:10px; background:var(--panel2); border:1px solid var(--line); color:#fff; border-radius:10px; padding:12px; }
+    .btn { border:0; border-radius:10px; padding:11px 14px; cursor:pointer; font-weight:700; }
+    .btn-pri { background:var(--pri); color:#fff; }
+    .btn-ghost { background:var(--panel2); color:#cbd5e1; border:1px solid var(--line); }
+    .danger { margin-top:12px; border:1px solid #b91c1c; background:#7f1d1d; color:#fecaca; border-radius:10px; padding:10px; }
+
+    .app { min-height:100vh; display:grid; grid-template-columns:280px 1fr; }
+    .aside { background:linear-gradient(160deg,#0f172a 0%, #1e1b4b 50%, #0f172a 100%); border-right:1px solid var(--line); padding:16px; display:flex; flex-direction:column; }
+    .logo { font-size:34px; font-weight:900; margin:8px 4px 2px; }
+    .badge { margin:8px 4px 16px; border:1px solid #f59e0b55; background:#f59e0b22; color:#fde68a; border-radius:8px; padding:8px; font-size:12px; }
+    .menu { display:flex; flex-direction:column; gap:6px; }
+    .menu-btn { width:100%; text-align:left; border:0; border-radius:10px; padding:10px 12px; color:#c7d2fe; background:transparent; cursor:pointer; font-weight:700; }
+    .menu-btn.active { background:#4f46e5; color:#fff; }
+    .menu-btn:hover { background:#ffffff14; }
+    .aside-bottom { margin-top:auto; }
+
+    .main { padding:16px; }
+    .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .title { margin:0; font-size:30px; font-weight:900; }
+    .cards { display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width: 1050px) { .cards.two { grid-template-columns:1fr 1fr; } }
+
+    .card { background:rgba(30,41,59,.92); border:1px solid var(--line); border-radius:14px; padding:14px; }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+
+    table { width:100%; border-collapse:collapse; }
+    th,td { border-top:1px solid var(--line); padding:10px; text-align:left; font-size:14px; }
+    th { background:#111827; color:var(--muted); font-weight:700; text-transform:uppercase; font-size:12px; }
+
+    .pill { border:1px solid var(--line); background:var(--panel2); border-radius:999px; padding:3px 9px; font-size:12px; }
+    .log { background:#020617; border:1px solid #1f2937; border-radius:10px; min-height:180px; max-height:360px; overflow:auto; padding:10px; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+
+    .rules-list { display:flex; flex-direction:column; gap:10px; }
+    .rule { border:1px solid var(--line); border-radius:12px; background:#111827; padding:12px; }
+    .rule-title { margin:0; font-size:18px; font-weight:800; }
+    .rule-meta { margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
+
+    .section { display:none; }
+    .section.active { display:block; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div id="loginCard" class="card" style="max-width:420px; margin: 60px auto;">
-      <h2 style="margin:0 0 10px;">SuperAdmin вход</h2>
-      <p class="muted" style="margin:0 0 14px;">Домен: admin-oleg.teambuh.ru</p>
-      <div class="row" style="display:grid; gap:8px;">
-        <input id="login" placeholder="Логин" />
-        <input id="password" type="password" placeholder="Пароль" />
-        <button id="loginBtn" class="btn">Войти</button>
-      </div>
-      <div id="loginError" class="danger hidden" style="margin-top:10px;"></div>
+  <div id="loginWrap" class="login-wrap">
+    <div class="login-card">
+      <div class="h1">TeamBuh SuperAdmin</div>
+      <div class="muted">Вход только для супер-админа</div>
+      <input id="login" class="field" placeholder="Логин" />
+      <input id="password" class="field" type="password" placeholder="Пароль" />
+      <button id="loginBtn" class="btn btn-pri" style="width:100%; margin-top:12px;">Войти</button>
+      <div id="loginError" class="danger hidden"></div>
     </div>
+  </div>
 
-    <div id="app" class="hidden">
-      <div class="row" style="justify-content:space-between; margin-bottom:12px;">
-        <div>
-          <h2 style="margin:0;">TeamBuh SuperAdmin</h2>
-          <div class="muted">Рабочий домен: admin-oleg.teambuh.ru</div>
-        </div>
-        <div class="row">
-          <span id="who" class="pill">—</span>
-          <button id="logoutBtn" class="btn2">Выйти</button>
-        </div>
+  <div id="app" class="app hidden">
+    <aside class="aside">
+      <div class="logo">TeamBuh</div>
+      <div class="badge">Вы в режиме SuperAdmin</div>
+      <div class="menu">
+        <button class="menu-btn active" data-sec="tenants">Клиенты</button>
+        <button class="menu-btn" data-sec="archive">Архив</button>
+        <button class="menu-btn" data-sec="rules">Налоговые правила</button>
+        <button class="menu-btn" data-sec="audit">Журнал</button>
+        <button class="menu-btn" data-sec="settings">Настройки</button>
+        <button class="menu-btn" data-sec="updates">Обновления</button>
+      </div>
+      <div class="aside-bottom row">
+        <span id="who" class="pill">—</span>
+        <button id="logoutBtn" class="btn btn-ghost">Выйти</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="top">
+        <h1 id="pageTitle" class="title">Клиенты</h1>
       </div>
 
-      <div class="grid">
-        <div class="card">
-          <div class="row" style="justify-content:space-between; margin-bottom:8px;">
-            <h3 style="margin:0;">Клиенты</h3>
-            <div class="row">
-              <button id="reloadTenants" class="btn2">Обновить</button>
-              <button id="deploySelected" class="ok">Обновить выбранных</button>
+      <section id="sec-tenants" class="section active">
+        <div class="cards two">
+          <div class="card">
+            <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+              <h3 style="margin:0;">Список клиентов</h3>
+              <div class="row">
+                <button id="reloadTenants" class="btn btn-ghost">Обновить</button>
+              </div>
             </div>
+            <table>
+              <thead><tr><th></th><th>tenant_id</th><th>Компания</th><th>Статус</th><th>Действие</th></tr></thead>
+              <tbody id="tenantsBody"></tbody>
+            </table>
           </div>
+
+          <div class="card">
+            <h3 style="margin:0 0 8px;">Обновление и лог</h3>
+            <div class="row" style="margin-bottom:8px;">
+              <button id="pullCode" class="btn btn-pri">Подтянуть код из Git</button>
+              <button id="deploySelected" class="btn" style="background:var(--ok); color:#fff;">Обновить выбранных</button>
+            </div>
+            <div id="log" class="log"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="sec-archive" class="section">
+        <div class="card">
+          <h3 style="margin:0 0 8px;">Архив клиентов</h3>
           <table>
-            <thead>
-              <tr>
-                <th></th><th>tenant_id</th><th>Компания</th><th>Статус</th><th>Действие</th>
-              </tr>
-            </thead>
-            <tbody id="tenantsBody"></tbody>
+            <thead><tr><th>tenant_id</th><th>Компания</th><th>Статус</th></tr></thead>
+            <tbody id="archiveBody"></tbody>
           </table>
         </div>
+      </section>
 
+      <section id="sec-rules" class="section">
         <div class="card">
-          <h3 style="margin:0 0 8px;">Обновление и лог</h3>
-          <div class="row" style="margin-bottom:8px;">
-            <button id="pullCode" class="btn">Подтянуть код из Git</button>
+          <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+            <h3 style="margin:0;">Системные налоговые правила</h3>
+            <div class="row">
+              <button id="addRuleBtn" class="btn btn-pri">+ Добавить правило</button>
+              <button id="reloadRules" class="btn btn-ghost">Обновить список</button>
+            </div>
           </div>
-          <div id="log" class="log"></div>
+          <div id="rulesList" class="rules-list"></div>
         </div>
-      </div>
+      </section>
 
-      <div class="card" style="margin-top:14px;">
-        <div class="row" style="justify-content:space-between; margin-bottom:8px;">
-          <h3 style="margin:0;">Системные налоговые правила (эталонная БД на сервере)</h3>
-          <button id="reloadRules" class="btn2">Обновить список</button>
+      <section id="sec-audit" class="section">
+        <div class="card">
+          <h3 style="margin:0;">Журнал</h3>
+          <p class="muted">Раздел журнала в процессе.</p>
         </div>
-        <table>
-          <thead>
-            <tr><th>id</th><th>Название</th><th>Периодичность</th><th>source</th></tr>
-          </thead>
-          <tbody id="rulesBody"></tbody>
-        </table>
-      </div>
-    </div>
+      </section>
+
+      <section id="sec-settings" class="section">
+        <div class="card">
+          <h3 style="margin:0;">Настройки</h3>
+          <p class="muted">Раздел настроек в процессе.</p>
+        </div>
+      </section>
+
+      <section id="sec-updates" class="section">
+        <div class="card">
+          <h3 style="margin:0 0 8px;">Обновления</h3>
+          <div class="row" style="margin-bottom:8px;">
+            <button id="pullCode2" class="btn btn-pri">Подтянуть код из Git</button>
+            <button id="deploySelected2" class="btn" style="background:var(--ok); color:#fff;">Обновить выбранных</button>
+          </div>
+          <div id="log2" class="log"></div>
+        </div>
+      </section>
+    </main>
   </div>
 
   <script>
     const tokenKey = 'superadmin_token';
+    const sections = {
+      tenants: 'Клиенты', archive: 'Архив', rules: 'Налоговые правила',
+      audit: 'Журнал', settings: 'Настройки', updates: 'Обновления'
+    };
+
     const $ = (id) => document.getElementById(id);
     const log = (msg) => {
       const t = new Date().toLocaleTimeString('ru-RU');
-      $('log').textContent += `[${t}] ${msg}\n`;
-      $('log').scrollTop = $('log').scrollHeight;
+      const row = `[${t}] ${msg}`;
+      ['log','log2'].forEach(id => {
+        const el = $(id); if (!el) return;
+        el.textContent += row + '\n';
+        el.scrollTop = el.scrollHeight;
+      });
     };
 
     const api = async (url, opts = {}) => {
@@ -116,12 +198,22 @@
       return data;
     };
 
-    const setAuthView = (ok) => {
-      $('loginCard').classList.toggle('hidden', ok);
+    const setAuth = (ok) => {
+      $('loginWrap').classList.toggle('hidden', ok);
       $('app').classList.toggle('hidden', !ok);
     };
 
+    const switchSection = (sec) => {
+      document.querySelectorAll('.menu-btn').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      const block = $('sec-' + sec); if (block) block.classList.add('active');
+      $('pageTitle').textContent = sections[sec] || 'Клиенты';
+    };
+
+    let tenantsCache = [];
+
     const renderTenants = (rows) => {
+      tenantsCache = rows || [];
       const body = $('tenantsBody');
       body.innerHTML = '';
       rows.forEach((t) => {
@@ -131,7 +223,7 @@
           <td>${t.id}</td>
           <td>${t.name || t.id}</td>
           <td>${t.status || 'active'}</td>
-          <td><button class="btn2" data-enter="${t.id}">Войти</button></td>
+          <td><button class="btn btn-ghost" data-enter="${t.id}">Войти</button></td>
         `;
         body.appendChild(tr);
       });
@@ -141,15 +233,36 @@
           window.location.href = `https://${tenantId}.teambuh.ru/?superadmin_mode=1&superadmin_tenant=${encodeURIComponent(tenantId)}`;
         });
       });
+
+      const archiveBody = $('archiveBody');
+      archiveBody.innerHTML = '';
+      rows.filter(r => r.status === 'archived').forEach((t) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${t.id}</td><td>${t.name || t.id}</td><td>${t.status || ''}</td>`;
+        archiveBody.appendChild(tr);
+      });
     };
 
     const renderRules = (rows) => {
-      const body = $('rulesBody');
-      body.innerHTML = '';
+      const wrap = $('rulesList');
+      wrap.innerHTML = '';
       rows.forEach((r) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${r.id}</td><td>${r.title || ''}</td><td>${r.periodicity || ''}</td><td>${r.source || ''}</td>`;
-        body.appendChild(tr);
+        const item = document.createElement('div');
+        item.className = 'rule';
+        item.innerHTML = `
+          <div class="row" style="justify-content:space-between; align-items:flex-start;">
+            <div>
+              <h4 class="rule-title">${r.title || r.id}</h4>
+              <div class="muted" style="margin-top:4px;">${r.shortDescription || ''}</div>
+            </div>
+            <button class="btn btn-ghost">✏️ Редактировать</button>
+          </div>
+          <div class="rule-meta">
+            <span class="pill">${r.periodicity || 'Без периодичности'}</span>
+            <span class="pill">source: ${r.source || 'system'}</span>
+          </div>
+        `;
+        wrap.appendChild(item);
       });
     };
 
@@ -162,18 +275,35 @@
       renderRules(r.rules || []);
     };
 
+    const doPull = async () => {
+      try {
+        log('Запуск: git pull origin main');
+        const r = await api('/api/superadmin/deploy/pull-code', { method: 'POST' });
+        log((r.output || '').slice(0, 6000) || 'OK');
+      } catch (e) { log(`Ошибка: ${e.message}`); }
+    };
+
+    const doDeploy = async () => {
+      const ids = [...document.querySelectorAll('input[data-tenant]:checked')].map(i => i.getAttribute('data-tenant'));
+      if (!ids.length) { log('Выберите хотя бы одного клиента'); return; }
+      try {
+        log(`Обновление клиентов: ${ids.join(', ')}`);
+        const r = await api('/api/superadmin/deploy/update-tenants', {
+          method: 'POST', body: JSON.stringify({ tenantIds: ids }), headers: {}
+        });
+        log((r.output || '').slice(0, 12000) || 'OK');
+      } catch (e) { log(`Ошибка: ${e.message}`); }
+    };
+
+    document.querySelectorAll('.menu-btn').forEach((b) => b.addEventListener('click', () => switchSection(b.dataset.sec)));
     $('loginBtn').addEventListener('click', async () => {
       $('loginError').classList.add('hidden');
       try {
-        const login = $('login').value.trim();
-        const password = $('password').value;
         const data = await api('/api/superadmin/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ login, password }),
-          headers: {},
+          method: 'POST', body: JSON.stringify({ login: $('login').value.trim(), password: $('password').value }), headers: {}
         });
         localStorage.setItem(tokenKey, data.token);
-        setAuthView(true);
+        setAuth(true);
         await loadAll();
       } catch (e) {
         $('loginError').textContent = e.message;
@@ -184,56 +314,35 @@
     $('logoutBtn').addEventListener('click', async () => {
       try { await api('/api/superadmin/auth/logout', { method: 'POST' }); } catch (_) {}
       localStorage.removeItem(tokenKey);
-      setAuthView(false);
+      setAuth(false);
     });
 
     $('reloadTenants').addEventListener('click', async () => {
-      try {
-        const t = await api('/api/superadmin/tenants');
-        renderTenants(t.tenants || []);
-        log('Список клиентов обновлён');
-      } catch (e) { log(`Ошибка: ${e.message}`); }
+      try { const t = await api('/api/superadmin/tenants'); renderTenants(t.tenants || []); log('Список клиентов обновлён'); }
+      catch (e) { log(`Ошибка: ${e.message}`); }
     });
 
     $('reloadRules').addEventListener('click', async () => {
-      try {
-        const r = await api('/api/superadmin/system-rules');
-        renderRules(r.rules || []);
-        log('Список правил обновлён');
-      } catch (e) { log(`Ошибка: ${e.message}`); }
+      try { const r = await api('/api/superadmin/system-rules'); renderRules(r.rules || []); log('Список правил обновлён'); }
+      catch (e) { log(`Ошибка: ${e.message}`); }
     });
 
-    $('pullCode').addEventListener('click', async () => {
-      try {
-        log('Запуск: git pull origin main');
-        const r = await api('/api/superadmin/deploy/pull-code', { method: 'POST' });
-        log((r.output || '').slice(0, 4000) || 'OK');
-      } catch (e) { log(`Ошибка: ${e.message}`); }
-    });
+    $('pullCode').addEventListener('click', doPull);
+    $('pullCode2').addEventListener('click', doPull);
+    $('deploySelected').addEventListener('click', doDeploy);
+    $('deploySelected2').addEventListener('click', doDeploy);
 
-    $('deploySelected').addEventListener('click', async () => {
-      const ids = [...document.querySelectorAll('input[data-tenant]:checked')].map(i => i.getAttribute('data-tenant'));
-      if (!ids.length) { log('Выберите хотя бы одного клиента'); return; }
-      try {
-        log(`Обновление клиентов: ${ids.join(', ')}`);
-        const r = await api('/api/superadmin/deploy/update-tenants', {
-          method: 'POST',
-          body: JSON.stringify({ tenantIds: ids }),
-          headers: {},
-        });
-        log((r.output || '').slice(0, 6000) || 'OK');
-      } catch (e) { log(`Ошибка: ${e.message}`); }
-    });
+    $('addRuleBtn').addEventListener('click', () => alert('Форма добавления правила подключается следующим шагом.'));
 
     (async () => {
       const token = localStorage.getItem(tokenKey);
-      if (!token) return setAuthView(false);
+      if (!token) return setAuth(false);
       try {
-        setAuthView(true);
+        setAuth(true);
         await loadAll();
       } catch (_) {
         localStorage.removeItem(tokenKey);
-        setAuthView(false);
+        setAuth(false);
       }
     })();
   </script>
