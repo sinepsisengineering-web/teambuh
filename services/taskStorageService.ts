@@ -295,7 +295,7 @@ export const getTaskStats = async (): Promise<TaskStats> => {
 // Проверить доступность базы данных задач
 export const isTaskDatabaseAvailable = async (): Promise<boolean> => {
     try {
-        const response = await fetch(`${SERVER_URL}/api/${TENANT_ID}/tasks-stats`);
+        const response = await authFetch(`${SERVER_URL}/api/${TENANT_ID}/tasks-stats`);
         return response.ok;
     } catch {
         return false;

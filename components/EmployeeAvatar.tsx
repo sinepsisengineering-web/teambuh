@@ -3,7 +3,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 const SERVER_URL = API_BASE_URL;
 
 // =============================================
@@ -122,7 +122,7 @@ export const EmployeeAvatar: React.FC<EmployeeAvatarProps> = ({
         if (employeeId) {
             const url = `${SERVER_URL}/api/org_default/employees/${employeeId}/photo`;
             // Проверяем существует ли фото
-            fetch(url, { method: 'HEAD' })
+            authFetch(url, { method: 'HEAD' })
                 .then(res => {
                     if (res.ok) {
                         setPhotoUrl(`${url}?t=${Date.now()}`); // Cache bust
@@ -154,7 +154,7 @@ export const EmployeeAvatar: React.FC<EmployeeAvatarProps> = ({
                 const formData = new FormData();
                 formData.append('photo', compressedBlob, 'avatar.webp');
 
-                const response = await fetch(
+                const response = await authFetch(
                     `${SERVER_URL}/api/org_default/employees/${employeeId}/photo`,
                     { method: 'POST', body: formData }
                 );

@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { UploadedDocument } from '../types';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 const SERVER_URL = API_BASE_URL;
 const DEFAULT_TENANT = 'org_default';
 
@@ -44,7 +44,7 @@ export const ServerDocumentUpload: React.FC<ServerDocumentUploadProps> = ({
 
     const loadDocuments = async () => {
         try {
-            const response = await fetch(getApiUrl());
+            const response = await authFetch(getApiUrl());
             if (!response.ok) throw new Error('Failed to load documents');
             const docs = await response.json();
             setDocuments(docs);
@@ -64,7 +64,7 @@ export const ServerDocumentUpload: React.FC<ServerDocumentUploadProps> = ({
             // Отправляем оригинальное имя отдельным полем для корректной кодировки
             formData.append('originalName', file.name);
 
-            const response = await fetch(getApiUrl(), {
+            const response = await authFetch(getApiUrl(), {
                 method: 'POST',
                 body: formData,
             });
@@ -85,7 +85,7 @@ export const ServerDocumentUpload: React.FC<ServerDocumentUploadProps> = ({
 
     const deleteDocument = async (filename: string) => {
         try {
-            const response = await fetch(getApiUrl(`/${encodeURIComponent(filename)}`), {
+            const response = await authFetch(getApiUrl(`/${encodeURIComponent(filename)}`), {
                 method: 'DELETE',
             });
 

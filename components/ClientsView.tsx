@@ -8,7 +8,7 @@ import { MiniCalendar } from './MiniCalendar';
 import { EmployeeAvatar } from './EmployeeAvatar';
 import { ArchiveConfirmModal } from './ArchiveConfirmModal';
 import { LegalEntity, TaxSystem as GlobalTaxSystem, LegalForm as GlobalLegalForm, Employee, UploadedDocument } from '../types';
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 import * as taskStorage from '../services/taskStorageService';
 import { archiveItem, storage } from '../services/storageService';
 import { getStatusIcon as getStatusIconFn } from '../services/taskIndicators';
@@ -1024,7 +1024,7 @@ const ClientManageTab: React.FC<{
     // Загрузка комплексов
     const [packages, setPackages] = useState<any[]>([]);
     React.useEffect(() => {
-        fetch(`${API_BASE_URL}/api/org_default/packages`)
+        authFetch(`${API_BASE_URL}/api/org_default/packages`)
             .then(r => r.json())
             .then(data => setPackages(Array.isArray(data) ? data : []))
             .catch(() => setPackages([]));
@@ -2414,7 +2414,7 @@ const ContractPreviewFromList: React.FC<{
         const loadContract = async () => {
             try {
                 // Сначала получаем метаданные
-                const metaRes = await fetch(`${SERVER_URL}/api/${DEFAULT_TENANT}/clients/${clientId}/contract`);
+                const metaRes = await authFetch(`${SERVER_URL}/api/${DEFAULT_TENANT}/clients/${clientId}/contract`);
                 if (!metaRes.ok) {
                     setError('Договор не загружен');
                     setIsLoading(false);
@@ -2424,7 +2424,7 @@ const ContractPreviewFromList: React.FC<{
                 setContractName(meta.name);
 
                 // Затем загружаем файл
-                const fileRes = await fetch(`${SERVER_URL}/api/${DEFAULT_TENANT}/clients/${clientId}/contract/view`);
+                const fileRes = await authFetch(`${SERVER_URL}/api/${DEFAULT_TENANT}/clients/${clientId}/contract/view`);
                 if (!fileRes.ok) throw new Error('Failed to load file');
 
                 const blob = await fileRes.blob();

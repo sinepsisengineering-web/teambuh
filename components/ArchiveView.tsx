@@ -30,24 +30,24 @@ interface ArchiveViewProps {
 // API ФУНКЦИИ
 // ============================================
 
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 const API_BASE = `${API_BASE_URL}/api`;
 
 const fetchArchive = async (tenantId: string, type: ArchiveType): Promise<ArchivedItem[]> => {
-  const response = await fetch(`${API_BASE}/${tenantId}/archive/${type}`);
+  const response = await authFetch(`${API_BASE}/${tenantId}/archive/${type}`);
   if (!response.ok) throw new Error('Failed to fetch archive');
   return response.json();
 };
 
 const restoreItem = async (tenantId: string, type: ArchiveType, itemId: string): Promise<void> => {
-  const response = await fetch(`${API_BASE}/${tenantId}/archive/${type}/${itemId}/restore`, {
+  const response = await authFetch(`${API_BASE}/${tenantId}/archive/${type}/${itemId}/restore`, {
     method: 'POST'
   });
   if (!response.ok) throw new Error('Failed to restore item');
 };
 
 const deleteItemForever = async (tenantId: string, type: ArchiveType, itemId: string): Promise<void> => {
-  const response = await fetch(`${API_BASE}/${tenantId}/archive/${type}/${itemId}`, {
+  const response = await authFetch(`${API_BASE}/${tenantId}/archive/${type}/${itemId}`, {
     method: 'DELETE'
   });
   if (!response.ok) throw new Error('Failed to delete item');

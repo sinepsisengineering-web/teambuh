@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Service, ServicePackage, TargetEntityType, ServicePeriodicity } from '../types';
 
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 const API_BASE = `${API_BASE_URL}/api/org_default`;
 
 type FilterMode = 'all' | 'services' | 'packages';
@@ -266,8 +266,8 @@ export const ServicesView: React.FC = () => {
         setError(null);
         try {
             const [svcRes, pkgRes] = await Promise.all([
-                fetch(`${API_BASE}/services`),
-                fetch(`${API_BASE}/packages`),
+                authFetch(`${API_BASE}/services`),
+                authFetch(`${API_BASE}/packages`),
             ]);
             if (!svcRes.ok || !pkgRes.ok) throw new Error('Failed to load data');
             setServices(await svcRes.json());
@@ -288,7 +288,7 @@ export const ServicesView: React.FC = () => {
 
     const saveService = useCallback(async (data: Partial<Service>) => {
         try {
-            const res = await fetch(`${API_BASE}/services`, {
+            const res = await authFetch(`${API_BASE}/services`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
@@ -305,7 +305,7 @@ export const ServicesView: React.FC = () => {
 
     const savePackage = useCallback(async (data: Partial<ServicePackage>) => {
         try {
-            const res = await fetch(`${API_BASE}/packages`, {
+            const res = await authFetch(`${API_BASE}/packages`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
@@ -323,7 +323,7 @@ export const ServicesView: React.FC = () => {
     const archiveService = useCallback(async (id: string) => {
         if (!confirm('Архивировать услугу?')) return;
         try {
-            await fetch(`${API_BASE}/services/${id}`, { method: 'DELETE' });
+            await authFetch(`${API_BASE}/services/${id}`, { method: 'DELETE' });
             await loadData();
         } catch (err: any) {
             console.error('[ServicesView] Archive error:', err);
@@ -333,7 +333,7 @@ export const ServicesView: React.FC = () => {
     const archivePackage = useCallback(async (id: string) => {
         if (!confirm('Архивировать комплекс?')) return;
         try {
-            await fetch(`${API_BASE}/packages/${id}`, { method: 'DELETE' });
+            await authFetch(`${API_BASE}/packages/${id}`, { method: 'DELETE' });
             await loadData();
         } catch (err: any) {
             console.error('[ServicesView] Archive error:', err);

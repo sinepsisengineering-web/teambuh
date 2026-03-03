@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 const SERVER_URL = API_BASE_URL;
 const DEFAULT_TENANT = 'org_default';
 
@@ -55,7 +55,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         const loadFile = async () => {
             try {
                 const url = `${SERVER_URL}/api/${DEFAULT_TENANT}/${entityType}/${entityId}/documents/${encodeURIComponent(document.filename)}/view`;
-                const response = await fetch(url);
+                const response = await authFetch(url);
 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
@@ -101,18 +101,28 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
-    const handleDownload = () => {
-        // Используем серверный endpoint для скачивания с правильным именем файла
-        const url = `${SERVER_URL}/api/${DEFAULT_TENANT}/${entityType}/${entityId}/documents/${encodeURIComponent(document.filename)}/download`;
+    const handleDownload = async () => {
+        try {
+            const url = `${SERVER_URL}/api/${DEFAULT_TENANT}/${entityType}/${entityId}/documents/${encodeURIComponent(document.filename)}/download`;
+            const response = await authFetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-        // Создаём скрытую ссылку и кликаем
-        const a = window.document.createElement('a');
-        a.href = url;
-        a.download = document.name; // Подсказка браузеру имя файла
-        a.style.display = 'none';
-        window.document.body.appendChild(a);
-        a.click();
-        window.document.body.removeChild(a);
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
+
+            const a = window.document.createElement('a');
+            a.href = objectUrl;
+            a.download = document.name;
+            a.style.display = 'none';
+            window.document.body.appendChild(a);
+            a.click();
+            window.document.body.removeChild(a);
+
+            URL.revokeObjectURL(objectUrl);
+        } catch (err) {
+            console.error('Failed to download document:', err);
+            setError('Не удалось скачать файл');
+        }
     };
 
     const handleBackdropClick = (e: React.MouseEvent) => {

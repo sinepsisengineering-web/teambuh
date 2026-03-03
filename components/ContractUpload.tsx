@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 
-import { API_BASE_URL } from '../apiConfig';
+import { API_BASE_URL, authFetch } from '../apiConfig';
 const SERVER_URL = API_BASE_URL;
 const DEFAULT_TENANT = 'org_default';
 
@@ -41,7 +41,7 @@ export const ContractUpload: React.FC<ContractUploadProps> = ({
         const loadContract = async () => {
             setIsLoading(true);
             try {
-                const response = await fetch(apiUrl);
+                const response = await authFetch(apiUrl);
                 if (response.ok) {
                     const data = await response.json();
                     setContract(data);
@@ -69,7 +69,7 @@ export const ContractUpload: React.FC<ContractUploadProps> = ({
             formData.append('file', file);
             formData.append('originalName', file.name);
 
-            const response = await fetch(apiUrl, {
+            const response = await authFetch(apiUrl, {
                 method: 'POST',
                 body: formData
             });
@@ -88,7 +88,7 @@ export const ContractUpload: React.FC<ContractUploadProps> = ({
 
     const handleDelete = async () => {
         try {
-            const response = await fetch(apiUrl, { method: 'DELETE' });
+            const response = await authFetch(apiUrl, { method: 'DELETE' });
             if (response.ok) {
                 setContract(null);
                 onContractChange?.(false);
@@ -242,7 +242,7 @@ const ContractPreviewModal: React.FC<{
     useEffect(() => {
         const loadFile = async () => {
             try {
-                const response = await fetch(viewUrl);
+                const response = await authFetch(viewUrl);
                 if (!response.ok) throw new Error('Failed to load');
 
                 const blob = await response.blob();
