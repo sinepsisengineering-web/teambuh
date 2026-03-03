@@ -21,6 +21,7 @@ const DOMAIN = process.env.DOMAIN || 'teambuh.ru';
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..');
 const SCRIPTS_DIR = path.join(PROJECT_ROOT, 'scripts');
 const TENANTS_DIR = path.join(PROJECT_ROOT, 'tenants');
+const TEMPLATE_DIR = path.join(PROJECT_ROOT, 'template');
 
 app.use(express.json());
 
@@ -58,6 +59,33 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'teambuh-master' });
 });
 
+function resolvePath(candidates) {
+    for (const p of candidates) {
+        if (fs.existsSync(p)) return p;
+    }
+    return null;
+}
+
+function runCommandWithLog(command) {
+    try {
+        const output = execSync(command, {
+            encoding: 'utf8',
+            timeout: 300000,
+            env: process.env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        return { ok: true, output };
+    } catch (error) {
+        const stdout = error.stdout ? String(error.stdout) : '';
+        const stderr = error.stderr ? String(error.stderr) : '';
+        const message = error.message ? String(error.message) : 'Command failed';
+        return {
+            ok: false,
+            output: [stdout, stderr, message].filter(Boolean).join('\n'),
+        };
+    }
+}
+
 // ============================================
 // GET /api/tenants — список всех тенантов
 // ============================================
@@ -90,6 +118,123 @@ app.get('/api/tenants', (req, res) => {
     } catch (error) {
         console.error('[Master] Error listing tenants:', error);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
+// GET /api/system-rules — системные правила из серверной template/rules.db
+// ============================================
+app.get('/api/system-rules', (req, res) => {
+    try {
+        const rulesDbPath = resolvePath([
+            path.join(TEMPLATE_DIR, 'data', 'global_data', 'rules.db'),
+            '/srv/template/data/global_data/rules.db',
+        ]);
+
+        if (!rulesDbPath) {
+            return res.status(404).json({
+                success: false,
+                error: 'rules.db not found in template',
+            });
+        }
+
+        const rulesDb = new Database(rulesDbPath, { readonly: true });
+        const rules = rulesDb
+            .prepare(`
+                SELECT
+                    id,
+                    COALESCE(short_title, title, id) AS title,
+                    COALESCE(description, short_description, '') AS shortDescription,
+                    COALESCE(periodicity, '') AS periodicity,
+                    COALESCE(source, 'system') AS source,
+                    updated_at AS updatedAt
+                FROM task_rules
+                ORDER BY title COLLATE NOCASE
+            `)
+            .all();
+        rulesDb.close();
+
+        res.json({ success: true, rules });
+    } catch (error) {
+        console.error('[Master] Error loading system rules:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
+// POST /api/deploy/pull-code — попытка git pull на сервере
+// ============================================
+app.post('/api/deploy/pull-code', (req, res) => {
+    const gitRoot = resolvePath([
+        '/srv/teambuh/.git',
+        '/srv/.git',
+    ]);
+
+    if (!gitRoot) {
+        return res.status(400).json({
+            success: false,
+            output: 'Git-репозиторий не найден в контейнере master-api. Выполните git pull на хосте сервера.',
+        });
+    }
+
+    const repoDir = path.dirname(gitRoot);
+    const result = runCommandWithLog(`git -C "${repoDir}" pull origin main`);
+    if (!result.ok) {
+        return res.status(500).json({ success: false, output: result.output });
+    }
+    res.json({ success: true, output: result.output });
+});
+
+// ============================================
+// POST /api/deploy/update-tenants — обновление выбранных тенантов
+// ============================================
+app.post('/api/deploy/update-tenants', (req, res) => {
+    try {
+        const payload = req.body || {};
+        const all = Boolean(payload.all);
+        const tenantIds = Array.isArray(payload.tenantIds)
+            ? payload.tenantIds.filter(Boolean)
+            : [];
+
+        const scriptPath = resolvePath([
+            path.join(SCRIPTS_DIR, 'update-tenants.sh'),
+            '/srv/scripts/update-tenants.sh',
+        ]);
+
+        if (!scriptPath) {
+            return res.status(500).json({
+                success: false,
+                output: 'Не найден update-tenants.sh',
+            });
+        }
+
+        let combinedOutput = '';
+        if (all) {
+            const result = runCommandWithLog(`bash "${scriptPath}" --all`);
+            combinedOutput += result.output;
+            if (!result.ok) {
+                return res.status(500).json({ success: false, output: combinedOutput });
+            }
+        } else {
+            if (tenantIds.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    output: 'Не выбраны клиенты для обновления',
+                });
+            }
+            for (const tenantId of tenantIds) {
+                const result = runCommandWithLog(`bash "${scriptPath}" "${tenantId}"`);
+                combinedOutput += `\n\n=== ${tenantId} ===\n${result.output}`;
+                if (!result.ok) {
+                    return res.status(500).json({ success: false, output: combinedOutput });
+                }
+            }
+        }
+
+        res.json({ success: true, output: combinedOutput.trim() });
+    } catch (error) {
+        console.error('[Master] Error update-tenants:', error);
+        res.status(500).json({ success: false, output: error.message });
     }
 });
 

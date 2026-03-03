@@ -103,13 +103,35 @@ echo "      ✅ Файлы скопированы"
 
 echo "[3/4] Инициализирую чистые БД..."
 
+# Сохраняем серверный эталон системных правил.
+# Важно: rules.db не подгружается из GitHub, источник только сервер.
+RULES_BACKUP_DIR=""
+if [ -f "$TEMPLATE_DIR/data/global_data/rules.db" ]; then
+    RULES_BACKUP_DIR="$(mktemp -d)"
+    cp -a "$TEMPLATE_DIR/data/global_data/rules.db" "$RULES_BACKUP_DIR/"
+    [ -f "$TEMPLATE_DIR/data/global_data/rules.db-shm" ] && cp -a "$TEMPLATE_DIR/data/global_data/rules.db-shm" "$RULES_BACKUP_DIR/" || true
+    [ -f "$TEMPLATE_DIR/data/global_data/rules.db-wal" ] && cp -a "$TEMPLATE_DIR/data/global_data/rules.db-wal" "$RULES_BACKUP_DIR/" || true
+    echo "      ✅ Сохранена серверная эталонная rules.db"
+else
+    echo "      ❌ Не найдена $TEMPLATE_DIR/data/global_data/rules.db"
+    echo "         Перед prepare-template сначала создайте/восстановите серверную эталонную БД правил."
+    exit 1
+fi
+
 # Очистим data/ в template
 rm -rf "$TEMPLATE_DIR/data"
 mkdir -p "$TEMPLATE_DIR/data"
 
 # Запускаем init-fresh-instance из контекста template
 cd "$TEMPLATE_DIR"
-node scripts/init-fresh-instance.js
+SKIP_SYSTEM_RULES_INIT=1 node scripts/init-fresh-instance.js
+
+# Возвращаем серверную эталонную rules.db после инициализации.
+mkdir -p "$TEMPLATE_DIR/data/global_data"
+cp -a "$RULES_BACKUP_DIR/rules.db" "$TEMPLATE_DIR/data/global_data/rules.db"
+[ -f "$RULES_BACKUP_DIR/rules.db-shm" ] && cp -a "$RULES_BACKUP_DIR/rules.db-shm" "$TEMPLATE_DIR/data/global_data/rules.db-shm" || true
+[ -f "$RULES_BACKUP_DIR/rules.db-wal" ] && cp -a "$RULES_BACKUP_DIR/rules.db-wal" "$TEMPLATE_DIR/data/global_data/rules.db-wal" || true
+rm -rf "$RULES_BACKUP_DIR"
 
 echo "      ✅ БД инициализированы"
 

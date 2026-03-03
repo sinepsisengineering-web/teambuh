@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 
 const tenantId = process.argv[2] || 'org_default';
+const skipSystemRulesInit = process.env.SKIP_SYSTEM_RULES_INIT === '1';
 const DATA_DIR = path.join(process.cwd(), 'data');
 const GLOBAL_DATA_DIR = path.join(DATA_DIR, 'global_data');
 const CLIENT_DATA_DIR = path.join(DATA_DIR, 'client_data', tenantId);
@@ -92,10 +93,15 @@ console.log('');
 // ============================================
 // 3. ИНИЦИАЛИЗАЦИЯ GLOBAL_DATA (системные правила)
 // ============================================
-// Важно: используем только новую схему и единый источник правил.
-const { migrateSystemRulesToMasterDb } = require('../server/database/rulesMigration');
-const migrationResult = migrateSystemRulesToMasterDb();
-console.log(`  ✅ Системные правила готовы: ${migrationResult.total} total, +${migrationResult.inserted} новых`);
+if (skipSystemRulesInit) {
+    console.log('  ℹ️  Инициализация системных правил пропущена (SKIP_SYSTEM_RULES_INIT=1)');
+    console.log('     Используется серверная эталонная rules.db без генерации из кода.');
+} else {
+    // Важно: используем только новую схему и единый источник правил.
+    const { migrateSystemRulesToMasterDb } = require('../server/database/rulesMigration');
+    const migrationResult = migrateSystemRulesToMasterDb();
+    console.log(`  ✅ Системные правила готовы: ${migrationResult.total} total, +${migrationResult.inserted} новых`);
+}
 
 console.log('');
 
