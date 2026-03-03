@@ -9,6 +9,7 @@ interface TaskModalContextType {
     closeTaskModal: () => void;
     setOnComplete: (handler: ((taskId: string) => void) | null) => void;
     setOnEdit: (handler: ((taskId: string) => void) | null) => void;
+    setOnDelete: (handler: ((task: TaskInfoData) => void) | null) => void;
     /** Подписка на событие после выполнения задачи (для обновления локальных списков) */
     subscribeAfterComplete: (cb: (taskId: string) => void) => () => void;
 }
@@ -32,6 +33,7 @@ export const TaskModalProvider: React.FC<TaskModalProviderProps> = ({ children }
     const [currentTask, setCurrentTask] = useState<TaskInfoData | null>(null);
     const [onCompleteHandler, setOnCompleteHandler] = useState<((taskId: string) => void) | null>(null);
     const [onEditHandler, setOnEditHandler] = useState<((taskId: string) => void) | null>(null);
+    const [onDeleteHandler, setOnDeleteHandler] = useState<((task: TaskInfoData) => void) | null>(null);
     const afterCompleteListeners = useRef<Set<(taskId: string) => void>>(new Set());
 
     const openTaskModal = (task: TaskInfoData) => {
@@ -50,6 +52,10 @@ export const TaskModalProvider: React.FC<TaskModalProviderProps> = ({ children }
 
     const setOnEdit = useCallback((handler: ((taskId: string) => void) | null) => {
         setOnEditHandler(() => handler);
+    }, []);
+
+    const setOnDelete = useCallback((handler: ((task: TaskInfoData) => void) | null) => {
+        setOnDeleteHandler(() => handler);
     }, []);
 
     const subscribeAfterComplete = useCallback((cb: (taskId: string) => void) => {
@@ -73,8 +79,15 @@ export const TaskModalProvider: React.FC<TaskModalProviderProps> = ({ children }
         }
     }, [onEditHandler]);
 
+    const handleDelete = useCallback((task: TaskInfoData) => {
+        if (onDeleteHandler) {
+            onDeleteHandler(task);
+            closeTaskModal();
+        }
+    }, [onDeleteHandler]);
+
     return (
-        <TaskModalContext.Provider value={{ openTaskModal, closeTaskModal, setOnComplete, setOnEdit, subscribeAfterComplete }}>
+        <TaskModalContext.Provider value={{ openTaskModal, closeTaskModal, setOnComplete, setOnEdit, setOnDelete, subscribeAfterComplete }}>
             {children}
             <TaskInfoModal
                 isOpen={isOpen}
@@ -82,6 +95,7 @@ export const TaskModalProvider: React.FC<TaskModalProviderProps> = ({ children }
                 onClose={closeTaskModal}
                 onComplete={handleComplete}
                 onEdit={handleEdit}
+                onDelete={handleDelete}
             />
         </TaskModalContext.Provider>
     );

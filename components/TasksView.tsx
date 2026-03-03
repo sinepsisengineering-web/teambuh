@@ -439,7 +439,7 @@ export const TasksView: React.FC<TasksViewProps> = ({
     initialClientId,
     onTaskCreated,
 }) => {
-    const { openTaskModal, setOnEdit } = useTaskModal();
+    const { openTaskModal, setOnEdit, setOnDelete } = useTaskModal();
 
     // Состояние фильтров
     const [filters, setFilters] = useState<FilterState>({
@@ -553,6 +553,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
         isOpen: boolean;
         taskTitle: string;
         taskIds: string[];
+        allSeriesTaskIds: string[];
+        isCyclic: boolean;
+        scope: 'single' | 'series';
     } | null>(null);
 
     // Состояние модалки переназначения
@@ -743,6 +746,27 @@ export const TasksView: React.FC<TasksViewProps> = ({
         tasksInMonth.filter(t => !getEffectiveAssignee(t, clientMap)).length
         , [tasksInMonth, clientMap]);
 
+    const getSeriesTaskIds = useCallback((baseTask: Task): string[] => {
+        if (baseTask.seriesId) {
+            return tasks.filter(t => t.seriesId === baseTask.seriesId).map(t => t.id);
+        }
+
+        if (baseTask.repeat === 'none') {
+            return [baseTask.id];
+        }
+
+        // Fallback для старых задач без seriesId: считаем серией одинаковые ручные циклические задачи одного клиента.
+        const fallbackSeries = tasks.filter(t =>
+            !t.isAutomatic &&
+            t.repeat === baseTask.repeat &&
+            t.legalEntityId === baseTask.legalEntityId &&
+            t.title === baseTask.title &&
+            (t.ruleId || '') === (baseTask.ruleId || '')
+        );
+
+        return fallbackSeries.map(t => t.id);
+    }, [tasks]);
+
     // Вкладки
     const [activeTab, setActiveTab] = useState<'list' | 'create' | 'calendar'>('list');
     const [prefillDate, setPrefillDate] = useState<string | null>(null);
@@ -783,6 +807,32 @@ export const TasksView: React.FC<TasksViewProps> = ({
         });
         return () => setOnEdit(null);
     }, [tasks, setOnEdit]);
+
+    React.useEffect(() => {
+        setOnDelete((taskData) => {
+            const baseTask = tasks.find(t => t.id === taskData.id);
+            const taskIds = taskData.taskIds && taskData.taskIds.length > 0
+                ? taskData.taskIds
+                : [taskData.id];
+
+            const allSeriesTaskIds = taskData.allSeriesTaskIds && taskData.allSeriesTaskIds.length > 0
+                ? taskData.allSeriesTaskIds
+                : (baseTask ? getSeriesTaskIds(baseTask) : [taskData.id]);
+
+            const repeat = taskData.repeat ?? baseTask?.repeat ?? 'none';
+            const isCyclic = repeat !== 'none' && allSeriesTaskIds.length > 1;
+
+            setDeleteConfirm({
+                isOpen: true,
+                taskTitle: taskData.title,
+                taskIds,
+                allSeriesTaskIds,
+                isCyclic,
+                scope: 'single',
+            });
+        });
+        return () => setOnDelete(null);
+    }, [tasks, getSeriesTaskIds, setOnDelete]);
 
     return (
         <div className="h-full flex flex-col -m-8">
@@ -910,10 +960,15 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                                     isBlocked={taskIsBlocked}
                                                     blockReason={blockReasonText}
                                                     onDelete={() => {
+                                                        const allSeriesTaskIds = getSeriesTaskIds(group.baseTask);
+                                                        const isCyclic = group.baseTask.repeat !== 'none' && allSeriesTaskIds.length > 1;
                                                         setDeleteConfirm({
                                                             isOpen: true,
                                                             taskTitle: group.baseTask.title,
                                                             taskIds: group.clients.map(c => c.taskId),
+                                                            allSeriesTaskIds,
+                                                            isCyclic,
+                                                            scope: 'single',
                                                         });
                                                     }}
                                                     onReassign={() => setReassignModal({
@@ -930,11 +985,8 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                                     })}
                                                     onMove={() => {
                                                         const isTax = !!(group.baseTask.ruleId && taxRuleIds.has(group.baseTask.ruleId));
-                                                        const isCyclic = group.baseTask.repeat !== 'none' && !!group.baseTask.seriesId;
-                                                        // Собираем все задачи серии из текущего набора
-                                                        const allSeriesIds = isCyclic
-                                                            ? tasks.filter(t => t.seriesId === group.baseTask.seriesId).map(t => t.id)
-                                                            : [];
+                                                        const allSeriesIds = getSeriesTaskIds(group.baseTask);
+                                                        const isCyclic = group.baseTask.repeat !== 'none' && allSeriesIds.length > 1;
                                                         setMoveModal({
                                                             isOpen: true,
                                                             taskTitle: group.baseTask.title,
@@ -978,6 +1030,11 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                                         isAutomatic: group.baseTask.isAutomatic,
                                                         ruleId: group.baseTask.ruleId,
                                                         isFloating: group.baseTask.isFloating,
+                                                        repeat: group.baseTask.repeat,
+                                                        seriesId: group.baseTask.seriesId,
+                                                        legalEntityId: group.baseTask.legalEntityId,
+                                                        taskIds: group.clients.map(c => c.taskId),
+                                                        allSeriesTaskIds: getSeriesTaskIds(group.baseTask),
                                                     })}
                                                 />
                                             );
@@ -1073,6 +1130,33 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                                 </span>
                                             )}
                                         </p>
+                                        {deleteConfirm.isCyclic && (
+                                            <div className="mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200 text-left">
+                                                <p className="text-xs font-semibold text-slate-600 mb-2">🔄 Циклическая задача</p>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name="deleteScope"
+                                                            checked={deleteConfirm.scope === 'single'}
+                                                            onChange={() => setDeleteConfirm(prev => prev ? { ...prev, scope: 'single' } : null)}
+                                                            className="accent-primary"
+                                                        />
+                                                        Только эту задачу
+                                                    </label>
+                                                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name="deleteScope"
+                                                            checked={deleteConfirm.scope === 'series'}
+                                                            onChange={() => setDeleteConfirm(prev => prev ? { ...prev, scope: 'series' } : null)}
+                                                            className="accent-primary"
+                                                        />
+                                                        Весь цикл ({deleteConfirm.allSeriesTaskIds.length} задач)
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="flex gap-3">
                                             <button
                                                 onClick={() => setDeleteConfirm(null)}
@@ -1082,7 +1166,10 @@ export const TasksView: React.FC<TasksViewProps> = ({
                                             </button>
                                             <button
                                                 onClick={() => {
-                                                    deleteConfirm.taskIds.forEach(id => onDeleteTask?.(id));
+                                                    const idsToDelete = deleteConfirm.scope === 'series'
+                                                        ? deleteConfirm.allSeriesTaskIds
+                                                        : deleteConfirm.taskIds;
+                                                    idsToDelete.forEach(id => onDeleteTask?.(id));
                                                     setDeleteConfirm(null);
                                                 }}
                                                 className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"

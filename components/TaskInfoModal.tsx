@@ -21,6 +21,11 @@ export interface TaskInfoData {
     isAutomatic?: boolean;     // Автоматическая задача
     ruleId?: string;           // ID правила
     isFloating?: boolean;      // Плавающая задача
+    repeat?: string;           // Тип повторения (none/daily/...)
+    seriesId?: string;         // ID цикла
+    legalEntityId?: string;    // ID клиента/сущности
+    taskIds?: string[];        // Набор задач (если открыто из сгруппированной строки)
+    allSeriesTaskIds?: string[]; // Все задачи цикла (если уже посчитано)
 }
 
 interface TaskInfoModalProps {
@@ -29,9 +34,10 @@ interface TaskInfoModalProps {
     onClose: () => void;
     onComplete?: (taskId: string) => void;
     onEdit?: (taskId: string) => void;
+    onDelete?: (task: TaskInfoData) => void;
 }
 
-export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onClose, onComplete, onEdit }) => {
+export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onClose, onComplete, onEdit, onDelete }) => {
     if (!isOpen || !task) return null;
 
     const computedStatus = computeTaskStatus({
@@ -171,6 +177,15 @@ export const TaskInfoModal: React.FC<TaskInfoModalProps> = ({ isOpen, task, onCl
                                 className="px-4 py-2 text-sm font-semibold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 rounded-lg transition-colors"
                             >
                                 ✏️ Редактировать
+                            </button>
+                        )}
+
+                        {onDelete && (
+                            <button
+                                onClick={() => onDelete(task)}
+                                className="px-4 py-2 text-sm font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
+                            >
+                                🗑 Удалить
                             </button>
                         )}
                     </div>

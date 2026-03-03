@@ -504,6 +504,17 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ tasks, legalEntities, 
     // Открытие модалки задачи
     const handleTaskClick = useCallback((task: Task) => {
         const client = clientMap.get(task.legalEntityId);
+        const allSeriesTaskIds = task.seriesId
+            ? tasks.filter(t => t.seriesId === task.seriesId).map(t => t.id)
+            : (task.repeat !== 'none'
+                ? tasks.filter(t =>
+                    !t.isAutomatic &&
+                    t.repeat === task.repeat &&
+                    t.legalEntityId === task.legalEntityId &&
+                    t.title === task.title &&
+                    (t.ruleId || '') === (task.ruleId || '')
+                ).map(t => t.id)
+                : [task.id]);
         openTaskModal({
             id: task.id,
             title: task.title,
@@ -518,8 +529,13 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({ tasks, legalEntities, 
             isAutomatic: task.isAutomatic,
             ruleId: task.ruleId,
             isFloating: task.isFloating,
+            repeat: task.repeat,
+            seriesId: task.seriesId,
+            legalEntityId: task.legalEntityId,
+            taskIds: [task.id],
+            allSeriesTaskIds,
         });
-    }, [clientMap, openTaskModal]);
+    }, [clientMap, openTaskModal, tasks]);
 
     // Иконка статуса
     const getStatusIcon = (task: Task): string => {
