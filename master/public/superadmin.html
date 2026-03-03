@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TeamBuh SuperAdmin</title>
+  <style>
+    :root { --bg:#0f172a; --card:#1e293b; --muted:#94a3b8; --pri:#6366f1; --ok:#16a34a; --line:#334155; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: Inter, system-ui, -apple-system, sans-serif; background:linear-gradient(140deg,#0f172a,#1e1b4b); color:#e2e8f0; }
+    .wrap { max-width: 1180px; margin: 24px auto; padding: 0 16px; }
+    .card { background: rgba(30,41,59,.9); border:1px solid var(--line); border-radius: 14px; padding:16px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    input,button,select { font: inherit; }
+    input,select { background:#0b1220; border:1px solid var(--line); color:#fff; border-radius:10px; padding:10px 12px; }
+    button { border:0; border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer; }
+    .btn { background:var(--pri); color:#fff; }
+    .btn2 { background:#0b1220; color:#cbd5e1; border:1px solid var(--line); }
+    .ok { background:var(--ok); color:#fff; }
+    .muted { color:var(--muted); font-size:13px; }
+    table { width:100%; border-collapse: collapse; }
+    th,td { border-top:1px solid var(--line); padding:10px; text-align:left; font-size:14px; }
+    th { color:#94a3b8; font-weight:600; background:#111827; }
+    .hidden { display:none !important; }
+    .pill { border:1px solid var(--line); background:#0b1220; border-radius:999px; padding:3px 9px; font-size:12px; }
+    .grid { display:grid; grid-template-columns: 1fr; gap:14px; }
+    @media (min-width: 980px) { .grid { grid-template-columns: 1.15fr .85fr; } }
+    .log { background:#05070d; border:1px solid #1f2937; border-radius:12px; padding:10px; min-height:180px; max-height:360px; overflow:auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .danger { background:#7f1d1d; color:#fecaca; border:1px solid #b91c1c; padding:10px; border-radius:10px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="loginCard" class="card" style="max-width:420px; margin: 60px auto;">
+      <h2 style="margin:0 0 10px;">SuperAdmin вход</h2>
+      <p class="muted" style="margin:0 0 14px;">Домен: admin-oleg.teambuh.ru</p>
+      <div class="row" style="display:grid; gap:8px;">
+        <input id="login" placeholder="Логин" />
+        <input id="password" type="password" placeholder="Пароль" />
+        <button id="loginBtn" class="btn">Войти</button>
+      </div>
+      <div id="loginError" class="danger hidden" style="margin-top:10px;"></div>
+    </div>
+
+    <div id="app" class="hidden">
+      <div class="row" style="justify-content:space-between; margin-bottom:12px;">
+        <div>
+          <h2 style="margin:0;">TeamBuh SuperAdmin</h2>
+          <div class="muted">Рабочий домен: admin-oleg.teambuh.ru</div>
+        </div>
+        <div class="row">
+          <span id="who" class="pill">—</span>
+          <button id="logoutBtn" class="btn2">Выйти</button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+            <h3 style="margin:0;">Клиенты</h3>
+            <div class="row">
+              <button id="reloadTenants" class="btn2">Обновить</button>
+              <button id="deploySelected" class="ok">Обновить выбранных</button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th></th><th>tenant_id</th><th>Компания</th><th>Статус</th><th>Действие</th>
+              </tr>
+            </thead>
+            <tbody id="tenantsBody"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 8px;">Обновление и лог</h3>
+          <div class="row" style="margin-bottom:8px;">
+            <button id="pullCode" class="btn">Подтянуть код из Git</button>
+          </div>
+          <div id="log" class="log"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+          <h3 style="margin:0;">Системные налоговые правила (эталонная БД на сервере)</h3>
+          <button id="reloadRules" class="btn2">Обновить список</button>
+        </div>
+        <table>
+          <thead>
+            <tr><th>id</th><th>Название</th><th>Периодичность</th><th>source</th></tr>
+          </thead>
+          <tbody id="rulesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const tokenKey = 'superadmin_token';
+    const $ = (id) => document.getElementById(id);
+    const log = (msg) => {
+      const t = new Date().toLocaleTimeString('ru-RU');
+      $('log').textContent += `[${t}] ${msg}\n`;
+      $('log').scrollTop = $('log').scrollHeight;
+    };
+
+    const api = async (url, opts = {}) => {
+      const token = localStorage.getItem(tokenKey);
+      const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(url, { ...opts, headers });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) throw new Error(data.error || data.output || `HTTP ${res.status}`);
+      return data;
+    };
+
+    const setAuthView = (ok) => {
+      $('loginCard').classList.toggle('hidden', ok);
+      $('app').classList.toggle('hidden', !ok);
+    };
+
+    const renderTenants = (rows) => {
+      const body = $('tenantsBody');
+      body.innerHTML = '';
+      rows.forEach((t) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input type="checkbox" data-tenant="${t.id}" ${t.status === 'active' ? '' : 'disabled'}></td>
+          <td>${t.id}</td>
+          <td>${t.name || t.id}</td>
+          <td>${t.status || 'active'}</td>
+          <td><button class="btn2" data-enter="${t.id}">Войти</button></td>
+        `;
+        body.appendChild(tr);
+      });
+      body.querySelectorAll('button[data-enter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const tenantId = btn.getAttribute('data-enter');
+          window.location.href = `https://${tenantId}.teambuh.ru/?superadmin_mode=1&superadmin_tenant=${encodeURIComponent(tenantId)}`;
+        });
+      });
+    };
+
+    const renderRules = (rows) => {
+      const body = $('rulesBody');
+      body.innerHTML = '';
+      rows.forEach((r) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.id}</td><td>${r.title || ''}</td><td>${r.periodicity || ''}</td><td>${r.source || ''}</td>`;
+        body.appendChild(tr);
+      });
+    };
+
+    const loadAll = async () => {
+      const me = await api('/api/superadmin/me');
+      $('who').textContent = me.login;
+      const t = await api('/api/superadmin/tenants');
+      renderTenants(t.tenants || []);
+      const r = await api('/api/superadmin/system-rules');
+      renderRules(r.rules || []);
+    };
+
+    $('loginBtn').addEventListener('click', async () => {
+      $('loginError').classList.add('hidden');
+      try {
+        const login = $('login').value.trim();
+        const password = $('password').value;
+        const data = await api('/api/superadmin/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ login, password }),
+          headers: {},
+        });
+        localStorage.setItem(tokenKey, data.token);
+        setAuthView(true);
+        await loadAll();
+      } catch (e) {
+        $('loginError').textContent = e.message;
+        $('loginError').classList.remove('hidden');
+      }
+    });
+
+    $('logoutBtn').addEventListener('click', async () => {
+      try { await api('/api/superadmin/auth/logout', { method: 'POST' }); } catch (_) {}
+      localStorage.removeItem(tokenKey);
+      setAuthView(false);
+    });
+
+    $('reloadTenants').addEventListener('click', async () => {
+      try {
+        const t = await api('/api/superadmin/tenants');
+        renderTenants(t.tenants || []);
+        log('Список клиентов обновлён');
+      } catch (e) { log(`Ошибка: ${e.message}`); }
+    });
+
+    $('reloadRules').addEventListener('click', async () => {
+      try {
+        const r = await api('/api/superadmin/system-rules');
+        renderRules(r.rules || []);
+        log('Список правил обновлён');
+      } catch (e) { log(`Ошибка: ${e.message}`); }
+    });
+
+    $('pullCode').addEventListener('click', async () => {
+      try {
+        log('Запуск: git pull origin main');
+        const r = await api('/api/superadmin/deploy/pull-code', { method: 'POST' });
+        log((r.output || '').slice(0, 4000) || 'OK');
+      } catch (e) { log(`Ошибка: ${e.message}`); }
+    });
+
+    $('deploySelected').addEventListener('click', async () => {
+      const ids = [...document.querySelectorAll('input[data-tenant]:checked')].map(i => i.getAttribute('data-tenant'));
+      if (!ids.length) { log('Выберите хотя бы одного клиента'); return; }
+      try {
+        log(`Обновление клиентов: ${ids.join(', ')}`);
+        const r = await api('/api/superadmin/deploy/update-tenants', {
+          method: 'POST',
+          body: JSON.stringify({ tenantIds: ids }),
+          headers: {},
+        });
+        log((r.output || '').slice(0, 6000) || 'OK');
+      } catch (e) { log(`Ошибка: ${e.message}`); }
+    });
+
+    (async () => {
+      const token = localStorage.getItem(tokenKey);
+      if (!token) return setAuthView(false);
+      try {
+        setAuthView(true);
+        await loadAll();
+      } catch (_) {
+        localStorage.removeItem(tokenKey);
+        setAuthView(false);
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -14,14 +14,19 @@ const Database = require('better-sqlite3');
 const { execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DOMAIN = process.env.DOMAIN || 'teambuh.ru';
+const SUPERADMIN_HOST = process.env.SUPERADMIN_HOST || `admin-oleg.${DOMAIN}`;
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.join(__dirname, '..');
 const SCRIPTS_DIR = path.join(PROJECT_ROOT, 'scripts');
 const TENANTS_DIR = path.join(PROJECT_ROOT, 'tenants');
 const TEMPLATE_DIR = path.join(PROJECT_ROOT, 'template');
+const SUPERADMIN_DB_PATH = path.join(__dirname, 'superadmin.db');
+const SUPERADMIN_SESSION_TTL_MS = 30 * 60 * 1000; // 30 мин
 
 app.use(express.json());
 
@@ -45,7 +50,73 @@ app.use((req, res, next) => {
     next();
 });
 
-// Лендинг + форма регистрации
+// ============================================
+// БАЗА ДАННЫХ SUPERADMIN
+// ============================================
+const superAdminDb = new Database(SUPERADMIN_DB_PATH);
+superAdminDb.pragma('journal_mode = WAL');
+superAdminDb.exec(`
+    CREATE TABLE IF NOT EXISTS superadmins (
+        login TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS superadmin_sessions (
+        token TEXT PRIMARY KEY,
+        login TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+`);
+
+function ensureDefaultSuperAdmin() {
+    const count = superAdminDb.prepare('SELECT COUNT(*) as c FROM superadmins').get().c;
+    if (count > 0) return;
+
+    const login = process.env.SUPERADMIN_LOGIN || 'oleg';
+    const envPassword = process.env.SUPERADMIN_PASSWORD;
+    const generatedPassword = envPassword || generateStrongPassword(24);
+    const now = new Date().toISOString();
+    const hash = bcrypt.hashSync(generatedPassword, 10);
+
+    superAdminDb
+        .prepare(`
+            INSERT INTO superadmins (login, password_hash, is_active, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?)
+        `)
+        .run(login, hash, now, now);
+
+    console.log('[SuperAdmin] Default account created');
+    console.log(`[SuperAdmin] Login: ${login}`);
+    console.log(`[SuperAdmin] Password: ${generatedPassword}`);
+    console.log('[SuperAdmin] Save this password now.');
+}
+
+function generateStrongPassword(length = 24) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()_-+=';
+    const bytes = crypto.randomBytes(length);
+    let out = '';
+    for (let i = 0; i < length; i += 1) {
+        out += chars[bytes[i] % chars.length];
+    }
+    return out;
+}
+
+ensureDefaultSuperAdmin();
+
+// Роутинг главной страницы по хосту
+app.get('/', (req, res, next) => {
+    const host = (req.headers.host || '').split(':')[0];
+    if (host === SUPERADMIN_HOST) {
+        return res.sendFile(path.join(__dirname, 'public', 'superadmin.html'));
+    }
+    return next();
+});
+
+// Статика
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ============================================
@@ -106,38 +177,225 @@ function runCommandWithLog(command) {
     }
 }
 
+function requireSuperAdmin(req, res, next) {
+    try {
+        const auth = req.headers.authorization || '';
+        if (!auth.startsWith('Bearer ')) {
+            return res.status(401).json({ success: false, error: 'Unauthorized' });
+        }
+        const token = auth.slice(7);
+        const session = superAdminDb
+            .prepare('SELECT token, login, expires_at FROM superadmin_sessions WHERE token = ?')
+            .get(token);
+        if (!session) {
+            return res.status(401).json({ success: false, error: 'Unauthorized' });
+        }
+        if (new Date(session.expires_at).getTime() < Date.now()) {
+            superAdminDb.prepare('DELETE FROM superadmin_sessions WHERE token = ?').run(token);
+            return res.status(401).json({ success: false, error: 'Session expired' });
+        }
+
+        // Sliding expiration
+        const nextExpiry = new Date(Date.now() + SUPERADMIN_SESSION_TTL_MS).toISOString();
+        superAdminDb
+            .prepare('UPDATE superadmin_sessions SET expires_at = ? WHERE token = ?')
+            .run(nextExpiry, token);
+
+        req.superAdmin = { login: session.login, token };
+        return next();
+    } catch (error) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+}
+
+function getTenantsEnriched() {
+    const tenants = db.prepare('SELECT * FROM tenants ORDER BY created_at DESC').all();
+    return tenants.map(t => {
+        let containerRunning = false;
+        try {
+            const output = execSync(
+                `docker inspect --format='{{.State.Running}}' teambuh-${t.id} 2>/dev/null`,
+                { encoding: 'utf8', timeout: 5000 }
+            ).trim();
+            containerRunning = output === 'true';
+        } catch {
+            containerRunning = false;
+        }
+        return {
+            ...t,
+            containerRunning,
+            url: `https://${t.id}.${DOMAIN}/`,
+        };
+    });
+}
+
 // ============================================
 // GET /api/tenants — список всех тенантов
 // ============================================
 
 app.get('/api/tenants', (req, res) => {
     try {
-        const tenants = db.prepare('SELECT * FROM tenants ORDER BY created_at DESC').all();
-
-        // Добавляем статус контейнера
-        const enriched = tenants.map(t => {
-            let containerRunning = false;
-            try {
-                const output = execSync(
-                    `docker inspect --format='{{.State.Running}}' teambuh-${t.id} 2>/dev/null`,
-                    { encoding: 'utf8', timeout: 5000 }
-                ).trim();
-                containerRunning = output === 'true';
-            } catch {
-                containerRunning = false;
-            }
-
-            return {
-                ...t,
-                containerRunning,
-                url: `https://${t.id}.${DOMAIN}/`,
-            };
-        });
+        const enriched = getTenantsEnriched();
 
         res.json({ success: true, tenants: enriched });
     } catch (error) {
         console.error('[Master] Error listing tenants:', error);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
+// SUPERADMIN AUTH/API
+// ============================================
+app.post('/api/superadmin/auth/login', (req, res) => {
+    const { login, password } = req.body || {};
+    if (!login || !password) {
+        return res.status(400).json({ success: false, error: 'Login and password required' });
+    }
+
+    const admin = superAdminDb
+        .prepare('SELECT login, password_hash, is_active FROM superadmins WHERE login = ?')
+        .get(login);
+    if (!admin || admin.is_active !== 1) {
+        return res.status(401).json({ success: false, error: 'Неверный логин или пароль' });
+    }
+    const ok = bcrypt.compareSync(password, admin.password_hash);
+    if (!ok) {
+        return res.status(401).json({ success: false, error: 'Неверный логин или пароль' });
+    }
+
+    const token = crypto.randomBytes(48).toString('hex');
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + SUPERADMIN_SESSION_TTL_MS).toISOString();
+    superAdminDb
+        .prepare(`
+            INSERT INTO superadmin_sessions (token, login, expires_at, created_at)
+            VALUES (?, ?, ?, ?)
+        `)
+        .run(token, login, expiresAt, now.toISOString());
+
+    return res.json({ success: true, token, expiresAt });
+});
+
+app.post('/api/superadmin/auth/logout', requireSuperAdmin, (req, res) => {
+    superAdminDb.prepare('DELETE FROM superadmin_sessions WHERE token = ?').run(req.superAdmin.token);
+    res.json({ success: true });
+});
+
+app.get('/api/superadmin/me', requireSuperAdmin, (req, res) => {
+    res.json({ success: true, login: req.superAdmin.login });
+});
+
+app.get('/api/superadmin/tenants', requireSuperAdmin, (req, res) => {
+    try {
+        res.json({ success: true, tenants: getTenantsEnriched() });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/superadmin/system-rules', requireSuperAdmin, (req, res) => {
+    try {
+        const rulesDbPath = resolvePath([
+            path.join(TEMPLATE_DIR, 'data', 'global_data', 'rules.db'),
+            '/srv/template/data/global_data/rules.db',
+        ]);
+
+        if (!rulesDbPath) {
+            return res.status(404).json({
+                success: false,
+                error: 'rules.db not found in template',
+            });
+        }
+
+        const rulesDb = new Database(rulesDbPath, { readonly: true });
+        const rules = rulesDb
+            .prepare(`
+                SELECT
+                    id,
+                    COALESCE(short_title, title, id) AS title,
+                    COALESCE(description, short_description, '') AS shortDescription,
+                    COALESCE(periodicity, '') AS periodicity,
+                    COALESCE(source, 'system') AS source,
+                    updated_at AS updatedAt
+                FROM task_rules
+                ORDER BY title COLLATE NOCASE
+            `)
+            .all();
+        rulesDb.close();
+        return res.json({ success: true, rules });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/superadmin/deploy/pull-code', requireSuperAdmin, (req, res) => {
+    const gitRoot = resolvePath([
+        '/srv/teambuh/.git',
+        '/srv/.git',
+    ]);
+
+    if (!gitRoot) {
+        return res.status(400).json({
+            success: false,
+            output: 'Git-репозиторий не найден в контейнере master-api. Выполните git pull на хосте сервера.',
+        });
+    }
+
+    const repoDir = path.dirname(gitRoot);
+    const result = runCommandWithLog(`git -C "${repoDir}" pull origin main`);
+    if (!result.ok) {
+        return res.status(500).json({ success: false, output: result.output });
+    }
+    return res.json({ success: true, output: result.output });
+});
+
+app.post('/api/superadmin/deploy/update-tenants', requireSuperAdmin, (req, res) => {
+    try {
+        const payload = req.body || {};
+        const all = Boolean(payload.all);
+        const tenantIds = Array.isArray(payload.tenantIds)
+            ? payload.tenantIds.filter(Boolean)
+            : [];
+
+        const scriptPath = resolvePath([
+            path.join(SCRIPTS_DIR, 'update-tenants.sh'),
+            '/srv/scripts/update-tenants.sh',
+        ]);
+
+        if (!scriptPath) {
+            return res.status(500).json({
+                success: false,
+                output: 'Не найден update-tenants.sh',
+            });
+        }
+
+        let combinedOutput = '';
+        if (all) {
+            const result = runCommandWithLog(`bash "${scriptPath}" --all`);
+            combinedOutput += result.output;
+            if (!result.ok) {
+                return res.status(500).json({ success: false, output: combinedOutput });
+            }
+        } else {
+            if (tenantIds.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    output: 'Не выбраны клиенты для обновления',
+                });
+            }
+            for (const tenantId of tenantIds) {
+                const result = runCommandWithLog(`bash "${scriptPath}" "${tenantId}"`);
+                combinedOutput += `\n\n=== ${tenantId} ===\n${result.output}`;
+                if (!result.ok) {
+                    return res.status(500).json({ success: false, output: combinedOutput });
+                }
+            }
+        }
+
+        return res.json({ success: true, output: combinedOutput.trim() });
+    } catch (error) {
+        return res.status(500).json({ success: false, output: error.message });
     }
 });
 
