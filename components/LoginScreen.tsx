@@ -37,8 +37,14 @@ export const LoginScreen: React.FC = () => {
     const [name, setName] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [localError, setLocalError] = useState<string | null>(null);
     const [registerLoading, setRegisterLoading] = useState(false);
+
+    const validatePasswordSymbols = (value: string): boolean => {
+        return /^[A-Za-z0-9!@#$%^&*()_\-+=\[\]{};:'",.<>/?\\|`~]+$/.test(value);
+    };
 
     // Проверяем URL на наличие ?invite=TOKEN или ?register&email=xxx
     useEffect(() => {
@@ -109,6 +115,10 @@ export const LoginScreen: React.FC = () => {
             setLocalError('Пароль должен быть не менее 6 символов');
             return;
         }
+        if (!validatePasswordSymbols(password)) {
+            setLocalError('Пароль содержит недопустимые символы. Используйте латиницу, цифры и спецсимволы.');
+            return;
+        }
 
         if (password !== confirmPassword) {
             setLocalError('Пароли не совпадают');
@@ -156,6 +166,10 @@ export const LoginScreen: React.FC = () => {
 
         if (password.length < 6) {
             setLocalError('Пароль должен быть не менее 6 символов');
+            return;
+        }
+        if (!validatePasswordSymbols(password)) {
+            setLocalError('Пароль содержит недопустимые символы. Используйте латиницу, цифры и спецсимволы.');
             return;
         }
 
@@ -286,28 +300,46 @@ export const LoginScreen: React.FC = () => {
                             {/* Пароль */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-400 mb-2">Придумайте пароль</label>
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
-                                    placeholder="Минимум 6 символов"
-                                    autoComplete="new-password"
-                                    minLength={6}
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full h-11 pl-4 pr-20 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
+                                        placeholder="Минимум 6 символов"
+                                        autoComplete="new-password"
+                                        minLength={6}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(prev => !prev)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-300 hover:text-indigo-200"
+                                    >
+                                        {showPassword ? 'Скрыть' : 'Показать'}
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Подтверждение */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-400 mb-2">Повторите пароль</label>
-                                <input
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
-                                    placeholder="••••••••"
-                                    autoComplete="new-password"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showConfirmPassword ? 'text' : 'password'}
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        className="w-full h-11 pl-4 pr-20 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
+                                        placeholder="••••••••"
+                                        autoComplete="new-password"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword(prev => !prev)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-300 hover:text-indigo-200"
+                                    >
+                                        {showConfirmPassword ? 'Скрыть' : 'Показать'}
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Ошибка */}
@@ -353,28 +385,46 @@ export const LoginScreen: React.FC = () => {
                             {/* Пароль */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-400 mb-2">Придумайте пароль</label>
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
-                                    placeholder="Минимум 6 символов"
-                                    autoComplete="new-password"
-                                    minLength={6}
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full h-11 pl-4 pr-20 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
+                                        placeholder="Минимум 6 символов"
+                                        autoComplete="new-password"
+                                        minLength={6}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(prev => !prev)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-300 hover:text-indigo-200"
+                                    >
+                                        {showPassword ? 'Скрыть' : 'Показать'}
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Подтверждение */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-400 mb-2">Повторите пароль</label>
-                                <input
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
-                                    placeholder="••••••••"
-                                    autoComplete="new-password"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showConfirmPassword ? 'text' : 'password'}
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        className="w-full h-11 pl-4 pr-20 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
+                                        placeholder="••••••••"
+                                        autoComplete="new-password"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword(prev => !prev)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-300 hover:text-indigo-200"
+                                    >
+                                        {showConfirmPassword ? 'Скрыть' : 'Показать'}
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Ошибка */}
@@ -416,14 +466,23 @@ export const LoginScreen: React.FC = () => {
                             {/* Пароль */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-400 mb-2">Пароль</label>
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full h-11 px-4 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
-                                    placeholder="••••••••"
-                                    autoComplete="current-password"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full h-11 pl-4 pr-20 text-base rounded-lg border border-white/10 bg-white/5 text-white outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10"
+                                        placeholder="••••••••"
+                                        autoComplete="current-password"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(prev => !prev)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-indigo-300 hover:text-indigo-200"
+                                    >
+                                        {showPassword ? 'Скрыть' : 'Показать'}
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Ошибка */}

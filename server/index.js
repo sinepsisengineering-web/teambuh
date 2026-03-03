@@ -88,6 +88,7 @@ const upload = multer({ storage });
 // =============================================
 
 const auth = require('./auth');
+const PASSWORD_ALLOWED_REGEX = /^[A-Za-z0-9!@#$%^&*()_\-+=\[\]{};:'",.<>/?\\|`~]+$/;
 
 // POST /api/auth/login — вход
 app.post('/api/auth/login', async (req, res) => {
@@ -151,6 +152,12 @@ app.post('/api/auth/change-password', auth.authMiddleware, async (req, res) => {
 
         if (newPassword.length < 6) {
             return res.status(400).json({ success: false, error: 'Новый пароль должен быть не менее 6 символов' });
+        }
+        if (!PASSWORD_ALLOWED_REGEX.test(newPassword)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Новый пароль содержит недопустимые символы. Используйте латиницу, цифры и спецсимволы.',
+            });
         }
 
         const authDb = auth.getAuthDb(tenantId);
@@ -278,6 +285,12 @@ app.post('/api/auth/register', async (req, res) => {
         if (password.length < 6) {
             return res.status(400).json({ success: false, error: 'Пароль должен быть не менее 6 символов' });
         }
+        if (!PASSWORD_ALLOWED_REGEX.test(password)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Пароль содержит недопустимые символы. Используйте латиницу, цифры и спецсимволы.',
+            });
+        }
 
         const authDb = auth.getAuthDb(DEFAULT_TENANT);
         const invitation = authDb.getInvitation(token);
@@ -335,6 +348,12 @@ app.post('/api/auth/register-admin', async (req, res) => {
 
         if (password.length < 6) {
             return res.status(400).json({ success: false, error: 'Пароль должен быть не менее 6 символов' });
+        }
+        if (!PASSWORD_ALLOWED_REGEX.test(password)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Пароль содержит недопустимые символы. Используйте латиницу, цифры и спецсимволы.',
+            });
         }
 
         const authDb = auth.getAuthDb(DEFAULT_TENANT);
