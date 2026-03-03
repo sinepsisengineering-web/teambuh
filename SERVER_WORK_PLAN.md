@@ -78,6 +78,14 @@
 - Не проверять права доступа только по UI: обязательно подтверждать API/БД.
 
 ## Команды обновления (фиксировано)
+- Единая команда (рекомендуется):
+`cd /srv/teambuh && sudo bash ./scripts/deploy-tenants.sh test-2`
+- Единая команда для всех:
+`cd /srv/teambuh && sudo bash ./scripts/deploy-tenants.sh --all`
+- Единая команда preview без сборки:
+`cd /srv/teambuh && sudo bash ./scripts/deploy-tenants.sh --dry-run --all`
+
+Старый раздельный режим (если нужно):
 - Обновить одного клиента:
 `cd /srv/teambuh && sudo ./scripts/update-tenants.sh test-2`
 - Обновить всех клиентов:

@@ -38,11 +38,50 @@ echo "      ✅ dist/ собран"
 
 echo "[2/4] Копирую файлы в template/..."
 
-# Файлы корня
-cp "$BASE_DIR/Dockerfile" "$TEMPLATE_DIR/"
-cp "$BASE_DIR/.dockerignore" "$TEMPLATE_DIR/"
+# Файлы корня для tenant runtime
 cp "$BASE_DIR/package.json" "$TEMPLATE_DIR/"
 cp "$BASE_DIR/package-lock.json" "$TEMPLATE_DIR/" 2>/dev/null || true
+
+# Tenant Dockerfile: фиксированная runtime-версия (без npm run build в контейнере)
+cat > "$TEMPLATE_DIR/Dockerfile" <<'EOF'
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache bash openssl sqlite
+
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev && npm cache clean --force
+
+COPY server/ ./server/
+COPY scripts/ ./scripts/
+COPY dist/ ./dist/
+
+RUN mkdir -p /app/data
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+EXPOSE 3001
+
+CMD ["npm", "run", "start:prod"]
+EOF
+
+# Tenant .dockerignore: dist должен входить в build context
+cat > "$TEMPLATE_DIR/.dockerignore" <<'EOF'
+node_modules
+release
+data
+.git
+.gitignore
+.agent
+.vscode
+*.md
+*.log
+.env
+.env.local
+.env.example
+EOF
 
 # Серверный код
 rm -rf "$TEMPLATE_DIR/server"
