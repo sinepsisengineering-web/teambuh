@@ -1938,14 +1938,62 @@ app.post('/api/:tenantId/archive/:archiveType/:itemId/restore', (req, res) => {
 
         const item = JSON.parse(fs.readFileSync(archiveFilePath, 'utf-8'));
         delete item.archivedAt;
+        try {
+            if (!RulesDatabase) {
+                return res.status(503).json({ error: 'Rules database not available' });
+            }
 
-        // Удаляем из архива
-        fs.unlinkSync(archiveFilePath);
+            const tenantDb = RulesDatabase.getTenantRulesDatabase(tenantId);
 
-        // TODO: Добавить правило обратно в rules.db если нужно
+            // В архив пишется DisplayRule из RulesView.
+            // Приводим к DbRule-формату для rules.db.
+            const mappedRule = {
+                id: item.id,
+                source: item.ruleType === 'system' ? 'system' : (item.source || 'custom'),
+                storageCategory: item.category || item.storageCategory || 'организационные',
+                isActive: true,
+                version: item.version || 1,
+                taskType: item.taskType,
+                shortTitle: item.shortTitle || item.titleTemplate || 'Без названия',
+                shortDescription: item.shortDescription || '',
+                description: item.description || null,
+                titleTemplate: item.titleTemplate || item.shortTitle || 'Без названия',
+                lawReference: item.lawReference || null,
+                periodicity: item.periodicity || 'monthly',
+                periodType: item.periodType || 'past',
+                dateConfig: item.dateConfig || { day: 1 },
+                dueDateRule: item.dueDateRule || 'next_business_day',
+                applicabilityConfig: {
+                    allClients: item.applicability?.allClients !== false,
+                    legalForms: item.applicability?.legalForms || null,
+                    taxSystems: item.applicability?.taxSystems || null,
+                    requiresEmployees: !!item.applicability?.requiresEmployees,
+                    requiresNds: !!item.applicability?.requiresNds,
+                    clientIds: item.applicability?.clientIds || null,
+                    profitAdvancePeriodicity: item.applicability?.profitAdvancePeriodicity || null,
+                },
+                excludeMonths: item.excludeMonths || null,
+                completionLeadDays: item.completionLeadDays ?? 3,
+                manualOnly: !!item.manualOnly,
+                createdBy: (req.user && req.user.email) || 'archive-restore',
+            };
 
-        console.log(`[Archive] Restored ${itemId} from archive (${archiveType})`);
-        res.json(item);
+            if (tenantDb.exists(mappedRule.id)) {
+                // Запись уже есть (обычно soft-delete): включаем обратно.
+                tenantDb.db.prepare('UPDATE task_rules SET is_active = 1 WHERE id = ?').run(mappedRule.id);
+            } else {
+                tenantDb.create(mappedRule);
+            }
+
+            // Удаляем из архива только после успешного восстановления в БД.
+            fs.unlinkSync(archiveFilePath);
+
+            console.log(`[Archive] Restored ${itemId} from archive (${archiveType})`);
+            res.json({ success: true, id: itemId });
+        } catch (error) {
+            console.error('[Archive] Failed to restore rule:', error);
+            res.status(500).json({ error: 'Failed to restore rule from archive' });
+        }
     }
 });
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Service, ServicePackage, TargetEntityType, ServicePeriodicity } from '../types';
+import { ArchiveConfirmModal } from './ArchiveConfirmModal';
 
 import { API_BASE_URL, authFetch } from '../apiConfig';
 const API_BASE = `${API_BASE_URL}/api/org_default`;
@@ -256,6 +257,12 @@ export const ServicesView: React.FC = () => {
     // Просмотр деталей
     const [viewingService, setViewingService] = useState<Service | null>(null);
     const [viewingPackage, setViewingPackage] = useState<ServicePackage | null>(null);
+    const [archiveTarget, setArchiveTarget] = useState<{
+        kind: 'service' | 'package';
+        id: string;
+        name: string;
+    } | null>(null);
+    const [isArchiving, setIsArchiving] = useState(false);
 
     // ============================================
     // ЗАГРУЗКА ДАННЫХ
@@ -320,25 +327,31 @@ export const ServicesView: React.FC = () => {
         }
     }, [loadData]);
 
-    const archiveService = useCallback(async (id: string) => {
-        if (!confirm('Архивировать услугу?')) return;
-        try {
-            await authFetch(`${API_BASE}/services/${id}`, { method: 'DELETE' });
-            await loadData();
-        } catch (err: any) {
-            console.error('[ServicesView] Archive error:', err);
-        }
-    }, [loadData]);
+    const archiveService = useCallback((id: string, name: string) => {
+        setArchiveTarget({ kind: 'service', id, name });
+    }, []);
 
-    const archivePackage = useCallback(async (id: string) => {
-        if (!confirm('Архивировать комплекс?')) return;
+    const archivePackage = useCallback((id: string, name: string) => {
+        setArchiveTarget({ kind: 'package', id, name });
+    }, []);
+
+    const handleArchiveConfirm = useCallback(async () => {
+        if (!archiveTarget) return;
+
+        setIsArchiving(true);
         try {
-            await authFetch(`${API_BASE}/packages/${id}`, { method: 'DELETE' });
+            const url = archiveTarget.kind === 'service'
+                ? `${API_BASE}/services/${archiveTarget.id}`
+                : `${API_BASE}/packages/${archiveTarget.id}`;
+            await authFetch(url, { method: 'DELETE' });
             await loadData();
+            setArchiveTarget(null);
         } catch (err: any) {
             console.error('[ServicesView] Archive error:', err);
+        } finally {
+            setIsArchiving(false);
         }
-    }, [loadData]);
+    }, [archiveTarget, loadData]);
 
     // ============================================
     // РЕНДЕР КАРТОЧКИ УСЛУГИ
@@ -374,7 +387,7 @@ export const ServicesView: React.FC = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                     </button>
-                    <button onClick={() => archiveService(service.id)}
+                    <button onClick={() => archiveService(service.id, service.name)}
                         className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="В архив">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
@@ -428,7 +441,7 @@ export const ServicesView: React.FC = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                     </button>
-                    <button onClick={() => archivePackage(pkg.id)}
+                    <button onClick={() => archivePackage(pkg.id, pkg.name)}
                         className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="В архив">
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
@@ -690,6 +703,15 @@ export const ServicesView: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            <ArchiveConfirmModal
+                isOpen={!!archiveTarget}
+                onClose={() => !isArchiving && setArchiveTarget(null)}
+                onConfirm={handleArchiveConfirm}
+                entityType={archiveTarget?.kind === 'package' ? 'комплекс' : 'услуга'}
+                entityName={archiveTarget?.name || ''}
+                isLoading={isArchiving}
+            />
         </div>
     );
 };
