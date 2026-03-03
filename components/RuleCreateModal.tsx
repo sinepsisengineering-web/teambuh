@@ -146,6 +146,7 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
 }) => {
     const isEditMode = !!editingRule;
     const isTemplate = defaultCategory === 'шаблоны' || editingRule?.storageCategory === 'шаблоны';
+    const isTaxOnlyMode = isSuperAdmin && !isTemplate;
 
     // Форма — category берётся из активной папки (defaultCategory)
     const [taskType, setTaskType] = useState<TaskType>('прочее');
@@ -213,7 +214,7 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
             console.log('[RuleCreateModal] applicabilityConfig:', editingRule.applicabilityConfig);
 
             setTaskType(editingRule.taskType as TaskType);
-            setCategory(editingRule.storageCategory as RuleCategory);
+            setCategory(isTaxOnlyMode ? 'налоговые' : (editingRule.storageCategory as RuleCategory));
             setShortTitle(editingRule.shortTitle);
             setShortDescription(editingRule.shortDescription);
             setDescription(editingRule.description || '');
@@ -275,7 +276,7 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
             // Режим создания — сброс формы
             console.log('[RuleCreateModal] Resetting form for create mode');
             setTaskType(isTemplate ? 'Задача' as TaskType : 'прочее');
-            setCategory(defaultCategory);
+            setCategory(isTaxOnlyMode ? 'налоговые' : defaultCategory);
             setShortTitle('');
             setShortDescription('');
             setDescription('');
@@ -315,7 +316,7 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
         setIsSaving(true);
 
         try {
-            const effectiveCategory = isTemplate ? 'шаблоны' : category;
+            const effectiveCategory = isTemplate ? 'шаблоны' : (isTaxOnlyMode ? 'налоговые' : category);
             const effectiveTaskType = isTemplate ? 'Задача' as TaskType : taskType;
             const effectivePeriodicity = isTemplate && !isRepeating ? RepeatFrequency.Yearly : dateConfig.periodicity;
             const effectiveManualOnly = isTemplate ? !isRepeating : manualOnly;
@@ -412,7 +413,7 @@ export const RuleCreateModal: React.FC<RuleCreateModalProps> = ({
                     )}
 
                     {/* Категория — скрыта для шаблонов */}
-                    {!isTemplate && (
+                    {!isTemplate && !isTaxOnlyMode && (
                         <div>
                             <label className="block text-xs font-semibold text-slate-500 uppercase mb-2">Категория</label>
                             <select
